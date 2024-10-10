@@ -146,7 +146,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
               const match = /language-(\w+)/.exec(className || '')
               return !inline && match ? (
                 <SyntaxHighlighter
-                  style={vscDarkPlus}
+                  style={vscDarkPlus as { [key: string]: React.CSSProperties }}
                   language={match[1]}
                   PreTag="div"
                   className="rounded-md overflow-hidden mb-2"
