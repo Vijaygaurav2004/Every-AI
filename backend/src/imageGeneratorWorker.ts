@@ -48,7 +48,7 @@ export default {
         const response = await ai.run(aiModel, { 
           prompt: enhancedPrompt,
           num_steps: numSteps || 4
-        }) as { image: string };
+        }) as unknown as { image: string };
         
         console.log('AI response type:', typeof response);
 

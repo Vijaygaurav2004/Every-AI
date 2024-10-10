@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
-import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, Copy, Check, X } from 'lucide-react'
+import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, CopyIcon, CheckIcon, X } from 'lucide-react'
 import { TEXT_API_URL, IMAGE_API_URL } from '../config'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -228,9 +228,9 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
                     onClick={() => copyToClipboard(String(children), blockId)}
                   >
                     {copiedStates[blockId] ? (
-                      <Check className="h-4 w-4 text-green-500" />
+                      <CheckIcon className="h-4 w-4 text-green-500" />
                     ) : (
-                      <Copy className="h-4 w-4" />
+                      <CopyIcon className="h-4 w-4" />
                     )}
                   </Button>
                   <SyntaxHighlighter
