@@ -7,3 +7,8 @@ ENVIRONMENT = "production"
 
 [ai]
 binding = "AI"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ai_workplace_history"
+database_id = "382861ab-1188-45ee-9fb0-bd1741bbabad"
