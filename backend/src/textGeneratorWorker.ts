@@ -1,5 +1,6 @@
 import { Ai } from '@cloudflare/ai';
 import { saveToHistory } from './db';
+import { D1Database } from '@cloudflare/workers-types';
 
 export interface Env {
   AI: Ai;
@@ -40,7 +41,7 @@ export default {
           // Save to history
           if (env.DB) {
             try {
-              await saveToHistory(env.DB, userId, toolName, messages[messages.length - 1].content, 'text', response.response);
+              await saveToHistory(env.DB, userId, toolName, messages[messages.length - 1].content, 'text', response.response || '');
             } catch (dbError) {
               console.error('Error saving to history:', dbError);
               // Continue execution even if saving to history fails

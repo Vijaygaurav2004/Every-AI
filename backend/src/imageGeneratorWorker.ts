@@ -1,5 +1,6 @@
 import { Ai } from '@cloudflare/ai';
 import { saveToHistory } from './db';
+import { D1Database } from '@cloudflare/workers-types';
 
 // Note: The Flux model (@cf/black-forest-labs/flux-1-schnell) generates square images (1:1 aspect ratio).
 // The aspect ratio parameter is used to adjust the prompt, but the generated image will always be square.
@@ -47,7 +48,7 @@ export default {
         const response = await ai.run(aiModel, { 
           prompt: enhancedPrompt,
           num_steps: numSteps || 4
-        });
+        }) as { image: string };
         
         console.log('AI response type:', typeof response);
 
