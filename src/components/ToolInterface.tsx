@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
-import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, Copy, Check, X } from 'lucide-react'
+import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, X } from 'lucide-react'
 import { TEXT_API_URL, IMAGE_API_URL } from '../config'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -34,7 +34,6 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const [copiedStates, setCopiedStates] = useState<{ [key: string]: boolean }>({})
   const [showNote, setShowNote] = useState(true)
 
   const isImageTool = toolName === 'DALL-E' || toolName === 'Stable Diffusion'
@@ -47,15 +46,6 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
       inputRef.current.focus()
     }
   }, [messages])
-
-  const copyToClipboard = (text: string, blockId: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedStates(prev => ({ ...prev, [blockId]: true }))
-      setTimeout(() => {
-        setCopiedStates(prev => ({ ...prev, [blockId]: false }))
-      }, 2000)
-    })
-  }
 
   const getImageDimensions = (ratio: string) => {
     switch (ratio) {
@@ -218,31 +208,16 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
           components={{
             code: ({node, inline, className, children, ...props}) => {
               const match = /language-(\w+)/.exec(className || '')
-              const blockId = `code-block-${index}`
               return !inline && match ? (
-                <div className="relative">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700"
-                    onClick={() => copyToClipboard(String(children), blockId)}
-                  >
-                    {copiedStates[blockId] ? (
-                      <Check className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
-                    )}
-                  </Button>
-                  <SyntaxHighlighter
-                    style={vscDarkPlus as any}
-                    language={match[1]}
-                    PreTag="div"
-                    className="rounded-md overflow-hidden mb-2 mt-2"
-                    {...props}
-                  >
-                    {String(children).replace(/\n$/, '')}
-                  </SyntaxHighlighter>
-                </div>
+                <SyntaxHighlighter
+                  style={vscDarkPlus as any}
+                  language={match[1]}
+                  PreTag="div"
+                  className="rounded-md overflow-hidden mb-2 mt-2"
+                  {...props}
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
               ) : (
                 <code className="bg-gray-800 rounded px-1 py-0.5" {...props}>
                   {children}
