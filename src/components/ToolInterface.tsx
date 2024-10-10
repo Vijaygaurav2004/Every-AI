@@ -5,10 +5,13 @@ import { ScrollArea } from './ui/scroll-area'
 import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader } from 'lucide-react'
 import { TEXT_API_URL, IMAGE_API_URL } from '../config'
 import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { useAuthState } from 'react-firebase-hooks/auth'
 import { auth } from '../firebase'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Tooltip } from './ui/tooltip'
+import RobotThinking from './RobotThinking'
 
 interface ToolInterfaceProps {
   toolName: string
@@ -106,6 +109,65 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
     document.body.removeChild(link);
   };
 
+  const renderMessage = (message: { role: 'user' | 'ai'; content: string; type: 'text' | 'image' }) => {
+    if (message.type === 'image') {
+      return (
+        <div className="flex flex-col items-center">
+          <img 
+            src={message.content} 
+            alt="Generated image" 
+            className="max-w-full h-auto rounded cursor-pointer transition-transform duration-300 hover:scale-105" 
+            style={{ maxHeight: '300px', objectFit: 'contain' }}
+            onClick={() => window.open(message.content, '_blank')}
+          />
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="mt-2"
+            onClick={() => downloadImage(message.content)}
+          >
+            <Download className="h-4 w-4 mr-2" /> Download
+          </Button>
+        </div>
+      )
+    } else {
+      return (
+        <ReactMarkdown
+          className="prose prose-invert max-w-none"
+          components={{
+            h1: ({node, ...props}) => <h1 className="text-2xl font-bold mt-4 mb-2" {...props} />,
+            h2: ({node, ...props}) => <h2 className="text-xl font-semibold mt-3 mb-2" {...props} />,
+            h3: ({node, ...props}) => <h3 className="text-lg font-medium mt-2 mb-1" {...props} />,
+            p: ({node, ...props}) => <p className="mb-2" {...props} />,
+            ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2" {...props} />,
+            ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2" {...props} />,
+            li: ({node, ...props}) => <li className="mb-1" {...props} />,
+            code: ({node, inline, className, children, ...props}) => {
+              const match = /language-(\w+)/.exec(className || '')
+              return !inline && match ? (
+                <SyntaxHighlighter
+                  style={vscDarkPlus}
+                  language={match[1]}
+                  PreTag="div"
+                  className="rounded-md overflow-hidden mb-2"
+                  {...props}
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              ) : (
+                <code className="bg-gray-800 rounded px-1 py-0.5" {...props}>
+                  {children}
+                </code>
+              )
+            }
+          }}
+        >
+          {message.content}
+        </ReactMarkdown>
+      )
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-white">
       <header className="bg-gray-800 p-4 flex items-center shadow-md">
@@ -130,39 +192,19 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
                   {message.role === 'user' ? <User className="w-5 h-5 text-white" /> : <MessageCircle className="w-5 h-5 text-white" />}
                 </div>
                 <div className={`p-3 rounded-lg ${message.role === 'user' ? 'bg-blue-600' : 'bg-gray-700'}`}>
-                  {message.type === 'text' ? (
-                    <ReactMarkdown className="prose prose-invert">{message.content}</ReactMarkdown>
-                  ) : (
-                    <div className="flex flex-col items-center">
-                      <img 
-                        src={message.content} 
-                        alt="Generated image" 
-                        className="max-w-full h-auto rounded cursor-pointer transition-transform duration-300 hover:scale-105" 
-                        style={{ maxHeight: '300px', objectFit: 'contain' }}
-                        onClick={() => window.open(message.content, '_blank')}
-                      />
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="mt-2"
-                        onClick={() => downloadImage(message.content)}
-                      >
-                        <Download className="h-4 w-4 mr-2" /> Download
-                      </Button>
-                    </div>
-                  )}
+                  {renderMessage(message)}
                 </div>
               </div>
             </motion.div>
           ))}
         </AnimatePresence>
-        {isLoading && (
-          <div className="flex justify-center items-center mt-4">
-            <Loader className="h-5 w-5 animate-spin" />
-          </div>
-        )}
       </ScrollArea>
-      <div className="p-4 bg-gray-800 border-t border-gray-700">
+      <div className="p-4 bg-gray-800 border-t border-gray-700 relative">
+        <AnimatePresence>
+          {isLoading && (
+            <RobotThinking />
+          )}
+        </AnimatePresence>
         <div className="flex space-x-2">
           <Input
             ref={inputRef}
