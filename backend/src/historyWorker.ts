@@ -1,4 +1,5 @@
-import { getUserHistory, deleteHistoryItem } from './db';
+import { initializeDatabase, getUserHistory } from './db';
+import { D1Database } from '@cloudflare/workers-types';
 
 export interface Env {
   DB: D1Database;
@@ -6,8 +7,8 @@ export interface Env {
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 export default {
@@ -16,14 +17,12 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    if (path === '/history' && request.method === 'GET') {
-      const userId = url.searchParams.get('userId');
+    if (request.method === 'GET') {
+      const url = new URL(request.url);
+      const firebaseUserId = url.searchParams.get('firebaseUserId');
       
-      if (!userId) {
-        return new Response(JSON.stringify({ error: 'User ID is required' }), {
+      if (!firebaseUserId) {
+        return new Response(JSON.stringify({ error: 'Firebase User ID is required' }), {
           status: 400,
           headers: {
             "Content-Type": "application/json",
@@ -33,8 +32,26 @@ export default {
       }
 
       try {
-        const history = await getUserHistory(env.DB, userId);
-        return new Response(JSON.stringify({ results: history }), {
+        console.log('Attempting to fetch history for user:', firebaseUserId);
+        
+        if (!env.DB) {
+          throw new Error('Database binding is not available');
+        }
+
+        // Initialize the database
+        try {
+          await initializeDatabase(env.DB);
+          console.log('Database initialized successfully');
+        } catch (initError) {
+          console.error('Error initializing database:', initError);
+          throw new Error(`Failed to initialize database: ${initError instanceof Error ? initError.message : String(initError)}`);
+        }
+
+        const history = await getUserHistory(env.DB, firebaseUserId);
+        console.log('History fetched:', JSON.stringify(history));
+        const response = JSON.stringify({ results: history.results });
+        console.log('Sending response:', response);
+        return new Response(response, {
           headers: {
             "Content-Type": "application/json",
             ...corsHeaders,
@@ -42,41 +59,11 @@ export default {
         });
       } catch (error) {
         console.error('Error fetching history:', error);
-        return new Response(JSON.stringify({ error: 'Failed to fetch history', details: error instanceof Error ? error.message : String(error) }), {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders,
-          },
-        });
-      }
-    }
-
-    if (path.startsWith('/history/') && request.method === 'DELETE') {
-      const id = parseInt(path.split('/').pop() || '', 10);
-      const { userId } = await request.json();
-
-      if (isNaN(id) || !userId) {
-        return new Response(JSON.stringify({ error: 'Invalid ID or User ID' }), {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders,
-          },
-        });
-      }
-
-      try {
-        await deleteHistoryItem(env.DB, id, userId);
-        return new Response(JSON.stringify({ success: true }), {
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders,
-          },
-        });
-      } catch (error) {
-        console.error('Error deleting history item:', error);
-        return new Response(JSON.stringify({ error: 'Failed to delete history item', details: error instanceof Error ? error.message : String(error) }), {
+        return new Response(JSON.stringify({ 
+          error: 'Failed to fetch history', 
+          details: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        }), {
           status: 500,
           headers: {
             "Content-Type": "application/json",

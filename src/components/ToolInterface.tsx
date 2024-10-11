@@ -38,6 +38,8 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
 
   const isImageTool = toolName === 'DALL-E' || toolName === 'Stable Diffusion'
 
+  const [category, setCategory] = useState('realistic')
+
   useEffect(() => {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight
@@ -114,9 +116,10 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               prompt: input, 
-              userId: user.uid,
+              firebaseUserId: user.uid,
               numSteps: numSteps,
-              aspectRatio: aspectRatio
+              aspectRatio: aspectRatio,
+              category: category // Add this line
             }),
           });
 
@@ -142,7 +145,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
                 role: msg.role,
                 content: msg.content,
               })),
-              userId: user.uid,
+              firebaseUserId: user.uid,
               toolName: toolName,
             }),
           });
@@ -316,6 +319,17 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
                   <SelectItem value="1:1" className="text-white hover:bg-gray-600">1:1 (Square)</SelectItem>
                   <SelectItem value="9:16" className="text-white hover:bg-gray-600">9:16 (Portrait)</SelectItem>
                   <SelectItem value="16:9" className="text-white hover:bg-gray-600">16:9 (Landscape)</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="w-[120px] bg-gray-700 text-white border-gray-600 focus:border-blue-500">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-700 text-white border-gray-600">
+                  <SelectItem value="realistic" className="text-white hover:bg-gray-600">Realistic</SelectItem>
+                  <SelectItem value="cartoon" className="text-white hover:bg-gray-600">Cartoon</SelectItem>
+                  <SelectItem value="anime" className="text-white hover:bg-gray-600">Anime</SelectItem>
+                  <SelectItem value="painting" className="text-white hover:bg-gray-600">Painting</SelectItem>
                 </SelectContent>
               </Select>
             </>

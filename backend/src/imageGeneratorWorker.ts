@@ -25,15 +25,15 @@ export default {
 
     if (request.method === 'POST') {
       try {
-        const { prompt, userId, numSteps, aspectRatio } = await request.json();
-        console.log('Received image generation prompt:', prompt, 'Steps:', numSteps, 'Aspect Ratio:', aspectRatio);
+        const { prompt, firebaseUserId, numSteps, aspectRatio, category } = await request.json();
+        console.log('Received image generation prompt:', prompt, 'Steps:', numSteps, 'Aspect Ratio:', aspectRatio, 'Category:', category);
 
         if (!env.AI) {
           throw new Error('AI binding is not available');
         }
 
         const ai = new Ai(env.AI);
-        let enhancedPrompt = `Create a highly detailed, photorealistic image of ${prompt}. Focus on intricate textures, accurate lighting, and lifelike details.`;
+        let enhancedPrompt = generateCategoryPrompt(prompt, category);
         
         // Modify prompt based on aspect ratio
         if (aspectRatio === '16:9') {
@@ -45,7 +45,7 @@ export default {
         const aiModel = '@cf/black-forest-labs/flux-1-schnell';
 
         console.log('Sending request to AI model:', aiModel, 'with prompt:', enhancedPrompt);
-        const response = await ai.run(aiModel, { 
+        const response = await ai.run('@cf/black-forest-labs/flux-1-schnell' as any, { 
           prompt: enhancedPrompt,
           num_steps: numSteps || 4
         }) as unknown as { image: string };
@@ -58,7 +58,7 @@ export default {
           // Save to history
           if (env.DB) {
             try {
-              await saveToHistory(env.DB, userId, 'Image Generation', prompt, 'image', imageData);
+              await saveToHistory(env.DB, firebaseUserId, 'Image Generation', prompt, 'image', imageData);
             } catch (dbError) {
               console.error('Error saving to history:', dbError);
             }
@@ -94,3 +94,15 @@ export default {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   },
 };
+
+function generateCategoryPrompt(basePrompt: string, category: string): string {
+  const categoryPrompts = {
+    realistic: "Create a photorealistic image of",
+    cartoon: "Generate a cartoon-style illustration of",
+    anime: "Create an anime-style drawing of",
+    painting: "Paint a detailed artistic representation of",
+  };
+
+  const categoryPrefix = categoryPrompts[category as keyof typeof categoryPrompts] || categoryPrompts.realistic;
+  return `${categoryPrefix} ${basePrompt}. Focus on intricate details and accurate representation of the style.`;
+}

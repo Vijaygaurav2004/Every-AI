@@ -21,8 +21,8 @@ export default {
 
     if (request.method === 'POST') {
       try {
-        const { messages, userId, toolName } = await request.json();
-        console.log('Received text generation request:', { messagesCount: messages.length, userId, toolName });
+        const { messages, firebaseUserId, toolName } = await request.json();
+        console.log('Received text generation request:', { messagesCount: messages.length, firebaseUserId, toolName });
 
         if (!env.AI) {
           throw new Error('AI binding is not available');
@@ -41,7 +41,7 @@ export default {
           // Save to history
           if (env.DB) {
             try {
-              await saveToHistory(env.DB, userId, toolName, messages[messages.length - 1].content, 'text', response.response || '');
+              await saveToHistory(env.DB, firebaseUserId, toolName, messages[messages.length - 1].content, 'text', response.response || '');
             } catch (dbError) {
               console.error('Error saving to history:', dbError);
               // Continue execution even if saving to history fails
