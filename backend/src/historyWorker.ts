@@ -1,14 +1,13 @@
-import { initializeDatabase, getUserHistory } from './db';
-import { D1Database } from '@cloudflare/workers-types';
+import { R2Bucket } from '@cloudflare/workers-types';
 
 export interface Env {
-  DB: D1Database;
+  HISTORY_BUCKET: R2Bucket;
 }
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
 };
 
 export default {
@@ -17,62 +16,127 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
-    if (request.method === 'GET') {
-      const url = new URL(request.url);
-      const firebaseUserId = url.searchParams.get('firebaseUserId');
-      
-      if (!firebaseUserId) {
-        return new Response(JSON.stringify({ error: 'Firebase User ID is required' }), {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    console.log('Received request:', request.method, path);
+
+    if (path === '/history' && request.method === 'GET') {
+      const userId = url.searchParams.get('firebaseUserId');
+      if (!userId) {
+        return new Response(JSON.stringify({ error: 'User ID is required' }), {
           status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders,
-          },
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       try {
-        console.log('Attempting to fetch history for user:', firebaseUserId);
+        console.log('Fetching history for user:', userId);
+        if (!env.HISTORY_BUCKET) {
+          throw new Error('HISTORY_BUCKET is not defined');
+        }
+
+        console.log('Listing objects from R2 bucket');
+        const objects = await env.HISTORY_BUCKET.list({ prefix: `${userId}/` });
+        console.log('Objects found:', objects.objects.length);
+
+        const results = await Promise.all(
+          objects.objects.map(async (obj) => {
+            console.log('Fetching object:', obj.key);
+            const item = await env.HISTORY_BUCKET.get(obj.key);
+            if (item === null) {
+              console.log('Object not found:', obj.key);
+              return null;
+            }
+            const data = await item.text();
+            return JSON.parse(data);
+          })
+        );
+        const filteredResults = results.filter(item => item !== null);
         
-        if (!env.DB) {
-          throw new Error('Database binding is not available');
-        }
+        // Remove duplicates based on timestamp
+        const uniqueResults = filteredResults.reduce((acc, current) => {
+          const x = acc.find(item => item.timestamp === current.timestamp);
+          if (!x) {
+            return acc.concat([current]);
+          } else {
+            return acc;
+          }
+        }, []);
 
-        // Initialize the database
-        try {
-          await initializeDatabase(env.DB);
-          console.log('Database initialized successfully');
-        } catch (initError) {
-          console.error('Error initializing database:', initError);
-          throw new Error(`Failed to initialize database: ${initError instanceof Error ? initError.message : String(initError)}`);
-        }
-
-        const history = await getUserHistory(env.DB, firebaseUserId);
-        console.log('History fetched:', JSON.stringify(history));
-        const response = JSON.stringify({ results: history.results });
-        console.log('Sending response:', response);
-        return new Response(response, {
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders,
-          },
+        return new Response(JSON.stringify({ results: uniqueResults }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (error) {
         console.error('Error fetching history:', error);
-        return new Response(JSON.stringify({ 
-          error: 'Failed to fetch history', 
-          details: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined
-        }), {
+        return new Response(JSON.stringify({ error: 'Failed to fetch history', details: error.message, stack: error.stack }), {
           status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders,
-          },
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
 
-    return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+    if (path === '/history' && request.method === 'POST') {
+      try {
+        console.log('Received POST request to save conversation');
+        const { userId, tool, messages, summary, timestamp } = await request.json();
+        console.log('Received data:', { userId, tool, messagesCount: messages.length, summary, timestamp });
+        const id = `${userId}/${tool}_${timestamp}`;
+        
+        const data = JSON.stringify({ id, userId, tool, messages, summary, timestamp });
+        await env.HISTORY_BUCKET.put(id, data);
+        console.log('Conversation saved with id:', id);
+        return new Response(JSON.stringify({ message: 'Conversation saved successfully', id }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error('Error saving conversation:', error);
+        return new Response(JSON.stringify({ error: 'Failed to save conversation', details: error.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (path === '/history' && request.method === 'DELETE') {
+      try {
+        const { id } = await request.json();
+        console.log('Received delete request for id:', id);
+        if (!id) {
+          return new Response(JSON.stringify({ error: 'Conversation ID is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        console.log('Attempting to delete conversation:', id);
+        
+        const object = await env.HISTORY_BUCKET.get(id);
+        
+        if (object === null) {
+          console.log('No object found with id:', id);
+          return new Response(JSON.stringify({ error: 'Conversation not found' }), {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        await env.HISTORY_BUCKET.delete(id);
+        
+        console.log('Conversation deleted:', id);
+        return new Response(JSON.stringify({ message: 'Conversation deleted successfully' }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error('Error deleting conversation:', error);
+        return new Response(JSON.stringify({ error: 'Failed to delete conversation', details: error.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    console.log('Route not found');
+    return new Response('Not Found', { status: 404, headers: corsHeaders });
   },
 };

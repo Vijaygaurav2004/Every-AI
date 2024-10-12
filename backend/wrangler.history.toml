@@ -5,7 +5,6 @@ compatibility_date = "2023-05-18"
 [vars]
 ENVIRONMENT = "production"
 
-[[d1_databases]]
-binding = "DB"
-database_name = "ai_workplace_history"
-database_id = "382861ab-1188-45ee-9fb0-bd1741bbabad"
+[[r2_buckets]]
+binding = "HISTORY_BUCKET"
+bucket_name = "ai-workplace-history"

@@ -3,7 +3,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
 import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, X } from 'lucide-react'
-import { TEXT_API_URL, IMAGE_API_URL } from '../config'
+import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL } from '../config'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Tooltip } from './ui/tooltip'
 import RobotThinking from './RobotThinking'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import { saveConversation } from '../utils/historyUtils'
 
 // Note: The image generation models currently support only square images (1:1 aspect ratio).
 // The aspect ratio selection affects the cropping of the generated image for display and download,
@@ -24,7 +25,7 @@ interface ToolInterfaceProps {
   userId: string
 }
 
-const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
+const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId }) => {
   const [user] = useAuthState(auth);
   const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string; type: 'text' | 'image' }[]>([])
   const [input, setInput] = useState('')
@@ -48,6 +49,20 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
       inputRef.current.focus()
     }
   }, [messages])
+
+  useEffect(() => {
+    return () => {
+      if (messages.length > 0) {
+        console.log('Saving conversation:', { userId, toolName, messages });
+        const summary = generateSummary(messages);
+        saveConversation(userId, toolName, messages, summary)
+          .then(() => console.log('Conversation saved successfully'))
+          .catch((error) => console.error('Failed to save conversation:', error));
+      } else {
+        console.log('No messages to save');
+      }
+    }
+  }, []) // Empty dependency array to ensure this effect runs only on unmount
 
   const getImageDimensions = (ratio: string) => {
     switch (ratio) {
@@ -119,7 +134,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
               firebaseUserId: user.uid,
               numSteps: numSteps,
               aspectRatio: aspectRatio,
-              category: category // Add this line
+              category: category
             }),
           });
 
@@ -133,6 +148,9 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
             const imageUrl = `data:image/png;base64,${data.image}`;
             const croppedImageUrl = await cropImage(imageUrl, aspectRatio);
             setMessages(prev => [...prev, { role: 'ai', content: croppedImageUrl, type: 'image' }]);
+            
+            // Save to history
+            await saveToHistory(user.uid, toolName, input, 'image', data.image);
           } else {
             throw new Error(`Unexpected response format: ${JSON.stringify(data)}`);
           }
@@ -157,6 +175,9 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
           const data = await response.json();
           if (data.response) {
             setMessages(prev => [...prev, { role: 'ai', content: data.response, type: 'text' }]);
+            
+            // Save to history
+            await saveToHistory(user.uid, toolName, input, 'text', data.response);
           } else {
             throw new Error('Unexpected response format');
           }
@@ -167,6 +188,30 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
       } finally {
         setIsLoading(false);
       }
+    }
+  };
+
+  const saveToHistory = async (firebaseUserId: string, toolName: string, prompt: string, responseType: string, response: string) => {
+    try {
+      const historyResponse = await fetch(HISTORY_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firebaseUserId,
+          tool: toolName,
+          prompt,
+          response,
+          type: responseType
+        }),
+      });
+
+      if (!historyResponse.ok) {
+        throw new Error(`Failed to save to history: ${historyResponse.statusText}`);
+      }
+
+      console.log('Successfully saved to history');
+    } catch (error) {
+      console.error('Error saving to history:', error);
     }
   };
 
@@ -233,6 +278,12 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack }) => {
         </ReactMarkdown>
       )
     }
+  }
+
+  const generateSummary = (messages: { role: 'user' | 'ai'; content: string; type: 'text' | 'image' }[]): string => {
+    const userMessages = messages.filter(m => m.role === 'user');
+    const firstUserMessage = userMessages[0]?.content || '';
+    return firstUserMessage.split(' ').slice(0, 5).join(' ') + '...';
   }
 
   return (
