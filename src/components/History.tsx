@@ -4,7 +4,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebase';
 import { HISTORY_API_URL } from '../config';
 import { Button } from './ui/button';
-import { Trash, MessageSquare, Image as ImageIcon } from 'lucide-react';
+import { Trash, MessageSquare, Image as ImageIcon, Download } from 'lucide-react';
 import { deleteConversation } from '../utils/historyUtils';
 
 interface Message {
@@ -68,6 +68,15 @@ const History: React.FC = () => {
     }
   };
 
+  const downloadImage = (imageUrl: string, fileName: string) => {
+    const link = document.createElement('a');
+    link.href = imageUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (isLoading) return <div className="text-center py-8">Loading history...</div>;
   if (error) return <div className="text-center py-8 text-red-500">Error: {error}</div>;
 
@@ -93,12 +102,22 @@ const History: React.FC = () => {
                 {message.type === 'text' ? (
                   message.content
                 ) : (
-                  <img 
-                    src={message.content} 
-                    alt="Generated image" 
-                    className="w-full h-auto mt-2 rounded-md"
-                    style={{ maxHeight: '200px', objectFit: 'cover' }}
-                  />
+                  <div className="mt-2">
+                    <img 
+                      src={message.content} 
+                      alt="Generated image" 
+                      className="max-w-full h-auto rounded-md"
+                      style={{ maxHeight: '200px', objectFit: 'contain' }}
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => downloadImage(message.content, `generated-image-${item.timestamp}.png`)}
+                    >
+                      <Download className="h-4 w-4 mr-2" /> Download
+                    </Button>
+                  </div>
                 )}
               </div>
             ))}
