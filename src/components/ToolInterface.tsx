@@ -50,20 +50,6 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
     }
   }, [messages])
 
-  useEffect(() => {
-    return () => {
-      if (messages.length > 0) {
-        console.log('Saving conversation:', { userId, toolName, messages });
-        const summary = generateSummary(messages);
-        saveConversation(userId, toolName, messages, summary)
-          .then(() => console.log('Conversation saved successfully'))
-          .catch((error) => console.error('Failed to save conversation:', error));
-      } else {
-        console.log('No messages to save');
-      }
-    }
-  }, []) // Empty dependency array to ensure this effect runs only on unmount
-
   const getImageDimensions = (ratio: string) => {
     switch (ratio) {
       case '1:1':
@@ -118,11 +104,18 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
   };
 
   const sendMessage = async () => {
-    if (input.trim() && user) {
+    if (input.trim()) {
       const newMessage = { role: 'user' as const, content: input, type: 'text' as const };
       setMessages(prev => [...prev, newMessage]);
       setInput('');
       setIsLoading(true);
+
+      // Save the user's input message
+      try {
+        await saveConversation(userId, toolName, [newMessage]);
+      } catch (error) {
+        console.error('Failed to save user message:', error);
+      }
 
       try {
         if (isImageTool) {
@@ -131,7 +124,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               prompt: input, 
-              firebaseUserId: user.uid,
+              firebaseUserId: user?.uid,
               numSteps: numSteps,
               aspectRatio: aspectRatio,
               category: category
@@ -147,10 +140,15 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
           if (data.image) {
             const imageUrl = `data:image/png;base64,${data.image}`;
             const croppedImageUrl = await cropImage(imageUrl, aspectRatio);
-            setMessages(prev => [...prev, { role: 'ai', content: croppedImageUrl, type: 'image' }]);
+            const aiMessage = { role: 'ai', content: croppedImageUrl, type: 'image' as const };
+            setMessages(prev => [...prev, aiMessage]);
             
-            // Save to history
-            await saveToHistory(user.uid, toolName, input, 'image', data.image);
+            // Save the AI's response
+            try {
+              await saveConversation(userId, toolName, [aiMessage]);
+            } catch (error) {
+              console.error('Failed to save AI image response:', error);
+            }
           } else {
             throw new Error(`Unexpected response format: ${JSON.stringify(data)}`);
           }
@@ -159,11 +157,11 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              messages: [...messages, newMessage].map(msg => ({
+              messages: messages.map(msg => ({
                 role: msg.role,
                 content: msg.content,
               })),
-              firebaseUserId: user.uid,
+              firebaseUserId: user?.uid,
               toolName: toolName,
             }),
           });
@@ -174,44 +172,33 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
 
           const data = await response.json();
           if (data.response) {
-            setMessages(prev => [...prev, { role: 'ai', content: data.response, type: 'text' }]);
+            const aiMessage = { role: 'ai', content: data.response, type: 'text' as const };
+            setMessages(prev => [...prev, aiMessage]);
             
-            // Save to history
-            await saveToHistory(user.uid, toolName, input, 'text', data.response);
+            // Save the AI's response
+            try {
+              await saveConversation(userId, toolName, [aiMessage]);
+            } catch (error) {
+              console.error('Failed to save AI text response:', error);
+            }
           } else {
             throw new Error('Unexpected response format');
           }
         }
       } catch (error) {
         console.error('Error:', error);
-        setMessages(prev => [...prev, { role: 'ai', content: `Error: ${error instanceof Error ? error.message : String(error)}`, type: 'text' }]);
+        const errorMessage = { role: 'ai', content: 'An error occurred. Please try again.', type: 'text' as const };
+        setMessages(prev => [...prev, errorMessage]);
+        
+        // Save the error message
+        try {
+          await saveConversation(userId, toolName, [errorMessage]);
+        } catch (saveError) {
+          console.error('Failed to save error message:', saveError);
+        }
       } finally {
         setIsLoading(false);
       }
-    }
-  };
-
-  const saveToHistory = async (firebaseUserId: string, toolName: string, prompt: string, responseType: string, response: string) => {
-    try {
-      const historyResponse = await fetch(HISTORY_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firebaseUserId,
-          tool: toolName,
-          prompt,
-          response,
-          type: responseType
-        }),
-      });
-
-      if (!historyResponse.ok) {
-        throw new Error(`Failed to save to history: ${historyResponse.statusText}`);
-      }
-
-      console.log('Successfully saved to history');
-    } catch (error) {
-      console.error('Error saving to history:', error);
     }
   };
 

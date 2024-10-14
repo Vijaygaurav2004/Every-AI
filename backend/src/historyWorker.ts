@@ -54,17 +54,13 @@ export default {
         );
         const filteredResults = results.filter(item => item !== null);
         
-        // Remove duplicates based on timestamp
-        const uniqueResults = filteredResults.reduce((acc, current) => {
-          const x = acc.find(item => item.timestamp === current.timestamp);
-          if (!x) {
-            return acc.concat([current]);
-          } else {
-            return acc;
-          }
-        }, []);
+        // Group conversations by tool type (text or image)
+        const groupedResults = {
+          text: filteredResults.filter(item => !['DALL-E', 'Stable Diffusion'].includes(item.tool)),
+          image: filteredResults.filter(item => ['DALL-E', 'Stable Diffusion'].includes(item.tool))
+        };
 
-        return new Response(JSON.stringify({ results: uniqueResults }), {
+        return new Response(JSON.stringify(groupedResults), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (error) {
@@ -79,11 +75,13 @@ export default {
     if (path === '/history' && request.method === 'POST') {
       try {
         console.log('Received POST request to save conversation');
-        const { userId, tool, messages, summary, timestamp } = await request.json();
-        console.log('Received data:', { userId, tool, messagesCount: messages.length, summary, timestamp });
+        const { userId, tool, messages, timestamp } = await request.json();
+        console.log('Received data:', { userId, tool, messagesCount: messages.length, timestamp });
         const id = `${userId}/${tool}_${timestamp}`;
         
-        const data = JSON.stringify({ id, userId, tool, messages, summary, timestamp });
+        // We're no longer checking for existing items, as we want to save the entire conversation
+
+        const data = JSON.stringify({ id, userId, tool, messages, timestamp });
         await env.HISTORY_BUCKET.put(id, data);
         console.log('Conversation saved with id:', id);
         return new Response(JSON.stringify({ message: 'Conversation saved successfully', id }), {

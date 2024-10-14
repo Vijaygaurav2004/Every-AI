@@ -1,8 +1,8 @@
 import { HISTORY_API_URL } from '../config';
 
-export const saveConversation = async (userId: string, tool: string, messages: any[], summary: string) => {
+export const saveConversation = async (userId: string, tool: string, messages: any[]) => {
   try {
-    console.log('Saving conversation:', { userId, tool, messages, summary });
+    console.log('Saving message:', { userId, tool, messages });
     const response = await fetch(`${HISTORY_API_URL}/history`, {
       method: 'POST',
       headers: {
@@ -12,21 +12,21 @@ export const saveConversation = async (userId: string, tool: string, messages: a
         userId,
         tool,
         messages,
-        summary,
         timestamp: Date.now(),
       }),
     });
 
-    const result = await response.json();
+    const responseData = await response.json();
+    console.log('Response from server:', responseData);
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}, message: ${result.error}, details: ${result.details}`);
+      throw new Error(`HTTP error! status: ${response.status}, message: ${responseData.error}, details: ${responseData.details}`);
     }
 
-    console.log('Conversation saved successfully:', result);
-    return result;
+    console.log('Message saved successfully:', responseData);
+    return responseData;
   } catch (error) {
-    console.error('Error saving conversation:', error);
+    console.error('Error saving message:', error);
     throw error;
   }
 };
