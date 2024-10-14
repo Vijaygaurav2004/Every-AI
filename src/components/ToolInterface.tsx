@@ -25,9 +25,15 @@ interface ToolInterfaceProps {
   userId: string
 }
 
+interface Message {
+  role: 'user' | 'ai';
+  content: string;
+  type: 'text' | 'image';
+}
+
 const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId }) => {
   const [user] = useAuthState(auth);
-  const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string; type: 'text' | 'image' }[]>([])
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [numSteps, setNumSteps] = useState(4)
@@ -105,7 +111,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
 
   const sendMessage = async () => {
     if (input.trim()) {
-      const newMessage = { role: 'user' as const, content: input, type: 'text' as const };
+      const newMessage: Message = { role: 'user', content: input, type: 'text' };
       setMessages(prev => [...prev, newMessage]);
       setInput('');
       setIsLoading(true);
@@ -140,7 +146,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
           if (data.image) {
             const imageUrl = `data:image/png;base64,${data.image}`;
             const croppedImageUrl = await cropImage(imageUrl, aspectRatio);
-            const aiMessage = { role: 'ai', content: croppedImageUrl, type: 'image' as const };
+            const aiMessage: Message = { role: 'ai', content: croppedImageUrl, type: 'image' };
             setMessages(prev => [...prev, aiMessage]);
             
             // Save the AI's response
@@ -172,7 +178,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
 
           const data = await response.json();
           if (data.response) {
-            const aiMessage = { role: 'ai', content: data.response, type: 'text' as const };
+            const aiMessage: Message = { role: 'ai', content: data.response, type: 'text' };
             setMessages(prev => [...prev, aiMessage]);
             
             // Save the AI's response
@@ -187,7 +193,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
         }
       } catch (error) {
         console.error('Error:', error);
-        const errorMessage = { role: 'ai', content: 'An error occurred. Please try again.', type: 'text' as const };
+        const errorMessage: Message = { role: 'ai', content: 'An error occurred. Please try again.', type: 'text' };
         setMessages(prev => [...prev, errorMessage]);
         
         // Save the error message
