@@ -1,6 +1,6 @@
 import { HISTORY_API_URL } from '../config';
 
-export const saveConversation = async (userId: string, tool: string, messages: any[]) => {
+export const saveConversation = async (userId: string, tool: string, messages: Message[]) => {
   try {
     console.log('Saving message:', { userId, tool, messages });
     const response = await fetch(`${HISTORY_API_URL}/history`, {
@@ -11,7 +11,12 @@ export const saveConversation = async (userId: string, tool: string, messages: a
       body: JSON.stringify({
         userId,
         tool,
-        messages,
+        messages: messages.map(m => ({
+          role: m.role,
+          content: m.content,
+          type: m.type,
+          sources: m.sources
+        })),
         timestamp: Date.now(),
       }),
     });

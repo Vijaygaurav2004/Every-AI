@@ -79,8 +79,6 @@ export default {
         console.log('Received data:', { userId, tool, messagesCount: messages.length, timestamp });
         const id = `${userId}/${tool}_${timestamp}`;
         
-        // We're no longer checking for existing items, as we want to save the entire conversation
-
         const data = JSON.stringify({ id, userId, tool, messages, timestamp });
         await env.HISTORY_BUCKET.put(id, data);
         console.log('Conversation saved with id:', id);
