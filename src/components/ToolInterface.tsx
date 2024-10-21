@@ -3,19 +3,18 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
 import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, X, Copy, CheckCircle } from 'lucide-react'
-import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL, PERPLEXITY_API_KEY } from '../config'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import { useAuthState } from 'react-firebase-hooks/auth'
+import { auth } from '../firebase'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { useAuthState } from 'react-firebase-hooks/auth'
-import { auth } from '../firebase'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Tooltip } from './ui/tooltip'
+import { AnimatePresence, motion } from 'framer-motion'
 import RobotThinking from './RobotThinking'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import { TEXT_API_URL, IMAGE_API_URL, PERPLEXITY_API_KEY } from '../config'
 import { saveConversation } from '../utils/historyUtils'
 import rehypeRaw from 'rehype-raw'
-
+import { Pluggable } from 'unified'
 
 interface ToolInterfaceProps {
   toolName: string
@@ -34,6 +33,9 @@ interface Message {
   type: 'text' | 'image';
   sources?: Source[];
 }
+
+
+
 
 const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId }) => {
   const [user] = useAuthState(auth);
@@ -374,7 +376,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
             </Button>
           )}
           <ReactMarkdown
-            rehypePlugins={[rehypeRaw]}
+            rehypePlugins={[rehypeRaw as Pluggable]}
             className="prose prose-invert max-w-none break-words text-sm sm:text-base"
             components={{
               code: ({node, inline, className, children, ...props}) => {
@@ -427,7 +429,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
 
   const handleFocus = () => {
     setIsFocused(true);
-    sendMessage(true);
+    sendMessage();
   };
 
   return (
@@ -481,7 +483,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
                       )
                     }
                   }}
-                  rehypePlugins={[rehypeRaw]}
+                  rehypePlugins={[rehypeRaw as Pluggable]}
                 >
                   {message.content}
                 </ReactMarkdown>
