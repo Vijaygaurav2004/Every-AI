@@ -57,4 +57,11 @@ export const aiTools = [
     icons: [MessageSquare, MessageSquare, MessageSquare],
     description: "AI assistant focused on task completion with strong ethical considerations."
   },
+  { 
+    id: 9,
+    name: "Perplexity",
+    category: "Text",
+    icons: [MessageSquare, MessageSquare, MessageSquare],
+    description: "Advanced AI chatbot powered by Perplexity for in-depth research and analysis."
+  },
 ]

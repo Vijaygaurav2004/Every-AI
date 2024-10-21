@@ -3,7 +3,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
 import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, X } from 'lucide-react'
-import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL } from '../config'
+import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL, PERPLEXITY_API_KEY } from '../config'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -14,10 +14,7 @@ import { Tooltip } from './ui/tooltip'
 import RobotThinking from './RobotThinking'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { saveConversation } from '../utils/historyUtils'
-
-// Note: The image generation models currently support only square images (1:1 aspect ratio).
-// The aspect ratio selection affects the cropping of the generated image for display and download,
-// but the initial generation is always square.
+import rehypeRaw from 'rehype-raw';
 
 interface ToolInterfaceProps {
   toolName: string
@@ -116,7 +113,6 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
       setInput('');
       setIsLoading(true);
 
-      // Save the user's input message
       try {
         await saveConversation(userId, toolName, [newMessage]);
       } catch (error) {
@@ -158,6 +154,42 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
           } else {
             throw new Error(`Unexpected response format: ${JSON.stringify(data)}`);
           }
+        } else if (toolName === 'Perplexity') {
+          const formattedMessages = messages.map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'assistant',
+            content: msg.content,
+          }));
+
+          formattedMessages.push({ role: 'user', content: input });
+
+          const response = await fetch('https://api.perplexity.ai/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: 'llama-3.1-sonar-small-128k-online',
+              messages: formattedMessages,
+              temperature: 0.2,
+              max_tokens: 4000,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error('Perplexity API error:', errorData);
+            throw new Error(`HTTP error! status: ${response.status}, message: ${JSON.stringify(errorData)}`);
+          }
+
+          const data = await response.json();
+          if (data.choices && data.choices[0] && data.choices[0].message) {
+            const aiMessage: Message = { role: 'ai', content: data.choices[0].message.content, type: 'text' };
+            setMessages(prev => [...prev, aiMessage]);
+            await saveConversation(userId, toolName, [aiMessage]);
+          } else {
+            throw new Error('Unexpected response format from Perplexity API');
+          }
         } else {
           const response = await fetch(TEXT_API_URL, {
             method: 'POST',
@@ -196,7 +228,6 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
         const errorMessage: Message = { role: 'ai', content: 'An error occurred. Please try again.', type: 'text' };
         setMessages(prev => [...prev, errorMessage]);
         
-        // Save the error message
         try {
           await saveConversation(userId, toolName, [errorMessage]);
         } catch (saveError) {
@@ -215,6 +246,14 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      // You can add a toast notification here if you want to inform the user that the text has been copied
+    }).catch(err => {
+      console.error('Failed to copy text: ', err);
+    });
   };
 
   const renderMessage = (message: { role: 'user' | 'ai'; content: string; type: 'text' | 'image' }, index: number) => {
@@ -243,32 +282,61 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
         </div>
       )
     } else {
+      const urlRegex = /(https?:\/\/[^\s]+?)(?=[.,;!?]?\s|$)/g;
+      const contentWithLinks = message.content.replace(urlRegex, (url) => 
+        `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">${url}</a>`
+      );
+
       return (
-        <ReactMarkdown
-          className="prose prose-invert max-w-none break-words"
-          components={{
-            code: ({node, inline, className, children, ...props}) => {
-              const match = /language-(\w+)/.exec(className || '')
-              return !inline && match ? (
-                <SyntaxHighlighter
-                  style={vscDarkPlus as any}
-                  language={match[1]}
-                  PreTag="div"
-                  className="rounded-md overflow-hidden mb-2 mt-2"
-                  {...props}
-                >
-                  {String(children).replace(/\n$/, '')}
-                </SyntaxHighlighter>
-              ) : (
-                <code className="bg-gray-800 rounded px-1 py-0.5" {...props}>
-                  {children}
-                </code>
-              )
-            }
-          }}
-        >
-          {message.content}
-        </ReactMarkdown>
+        <div className="relative group">
+          {message.role === 'ai' && (
+            <button
+              onClick={() => copyToClipboard(message.content)}
+              className="absolute top-0 right-0 p-2 text-gray-400 hover:text-white transition-colors duration-200 bg-gray-800 rounded opacity-0 group-hover:opacity-100"
+              aria-label="Copy response"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+              </svg>
+            </button>
+          )}
+          <div className="prose prose-invert max-w-none break-words">
+            <ReactMarkdown
+              components={{
+                code: ({node, inline, className, children, ...props}) => {
+                  const match = /language-(\w+)/.exec(className || '')
+                  return !inline && match ? (
+                    <SyntaxHighlighter
+                      style={vscDarkPlus as any}
+                      language={match[1]}
+                      PreTag="div"
+                      className="rounded-md overflow-hidden mb-2 mt-2"
+                      {...props}
+                    >
+                      {String(children).replace(/\n$/, '')}
+                    </SyntaxHighlighter>
+                  ) : (
+                    <code className="bg-gray-800 rounded px-1 py-0.5" {...props}>
+                      {children}
+                    </code>
+                  )
+                },
+                a: ({node, ...props}) => (
+                  <a 
+                    className="text-blue-400 hover:underline" 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    {...props} 
+                  />
+                ),
+              }}
+              rehypePlugins={[rehypeRaw]}
+            >
+              {contentWithLinks}
+            </ReactMarkdown>
+          </div>
+        </div>
       )
     }
   }
