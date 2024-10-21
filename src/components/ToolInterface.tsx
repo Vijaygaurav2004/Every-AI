@@ -282,7 +282,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
         </div>
       )
     } else {
-      const urlRegex = /(https?:\/\/[^\s]+?)(?=[.,;!?]?\s|$)/g;
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
       const contentWithLinks = message.content.replace(urlRegex, (url) => 
         `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">${url}</a>`
       );
