@@ -1,4 +1,11 @@
 import { HISTORY_API_URL } from '../config';
+// Add this near the top of the file
+interface Message {
+  role: 'user' | 'ai';
+  content: string;
+  type: 'text' | 'image';
+  sources?: { title: string; url: string }[];
+}
 
 export const saveConversation = async (userId: string, tool: string, messages: Message[]) => {
   try {
