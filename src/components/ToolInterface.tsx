@@ -372,7 +372,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
               className="absolute top-2 right-2 text-gray-400 hover:text-white"
               onClick={() => copyToClipboard(message.content, index)}
             >
-              {copiedIndex === index ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copiedIndex === index ? "Copied" : "Copy"}
             </Button>
           )}
           <ReactMarkdown
