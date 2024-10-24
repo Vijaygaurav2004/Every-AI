@@ -15,7 +15,11 @@ import RobotThinking from './RobotThinking'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { saveConversation } from '../utils/historyUtils'
 import rehypeRaw from 'rehype-raw';
+<<<<<<< HEAD
 import Groq from 'groq-sdk';
+=======
+import { Plugin } from 'unified';
+>>>>>>> origin/main
 
 interface ToolInterfaceProps {
   toolName: string
@@ -408,7 +412,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
                   />
                 ),
               }}
-              rehypePlugins={[rehypeRaw]}
+              rehypePlugins={[rehypeRaw as Plugin]}
             >
               {contentWithLinks}
             </ReactMarkdown>
@@ -706,3 +710,5 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
 }
 
 export default ToolInterface
+//commit is here
+//now 

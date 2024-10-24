@@ -27,8 +27,11 @@
     "react-firebase-hooks": "^5.1.1",
     "react-markdown": "^8.0.7",
     "react-syntax-highlighter": "^15.5.0",
-    "rehype-raw": "^7.0.0",
-    "tailwind-merge": "^1.13.2"
+    "rehype-raw": "^6.1.1",
+    "tailwind-merge": "^1.13.2",
+    "unified": "^10.1.2",
+    "vfile": "^5.3.7",
+    "vfile-message": "^3.1.4"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241018.0",
