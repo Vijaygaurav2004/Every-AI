@@ -14,7 +14,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ toolName, onClose }) => {
   const [messages, setMessages] = useState<{ role: 'user' | 'ai'; content: string; type: 'text' | 'image' }[]>([])
   const [input, setInput] = useState('')
 
-  const isImageTool = toolName === 'DALL-E' || toolName === 'Stable Diffusion'
+  const isImageTool = toolName === 'Flux' || toolName === 'Stable Diffusion'
 
   const toggleFullScreen = () => {
     setIsFullScreen(!isFullScreen)
@@ -23,8 +23,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ toolName, onClose }) => {
   const sendMessage = () => {
     if (input.trim()) {
       setMessages([...messages, { role: 'user', content: input, type: 'text' }])
-      // Here you would typically send the message to your AI backend
-      // For now, we'll just simulate a response
       setTimeout(() => {
         if (isImageTool) {
           setMessages(prev => [...prev, { role: 'ai', content: 'https://via.placeholder.com/300', type: 'image' }])

@@ -3,7 +3,7 @@ import { MessageSquare, Image as ImageIcon, Code, Music, Video } from 'lucide-re
 export const aiTools = [
   { 
     id: 1, 
-    name: "ChatGPT", 
+    name: "Llama-3.2", 
     category: "Text", 
     icons: [MessageSquare, MessageSquare, MessageSquare],
     description: "Advanced language model for natural conversations and text generation."
@@ -64,4 +64,20 @@ export const aiTools = [
     icons: [MessageSquare, MessageSquare, MessageSquare],
     description: "Advanced AI chatbot powered by Perplexity for in-depth research and analysis."
   },
+
+  {
+    id: 10,
+    name: "Gemini Pro 1.5",
+    category: "Text",
+    icons: [MessageSquare, MessageSquare, MessageSquare],
+    description: "Advanced AI model by Google, capable of understanding and generating text and images."
+  },
+
+  {
+    id: 11,
+    name: "Groq",
+    category: "Text",
+    icons: [MessageSquare, MessageSquare, MessageSquare],
+    description: "Fast language model for natural conversations and text generation."
+  }
 ]

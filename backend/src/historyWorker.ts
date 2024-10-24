@@ -56,8 +56,8 @@ export default {
         
         // Group conversations by tool type (text or image)
         const groupedResults = {
-          text: filteredResults.filter(item => !['DALL-E', 'Stable Diffusion'].includes(item.tool)),
-          image: filteredResults.filter(item => ['DALL-E', 'Stable Diffusion'].includes(item.tool))
+          text: filteredResults.filter(item => !['DALL_E', 'Stable Diffusion'].includes(item.tool)),
+          image: filteredResults.filter(item => ['DALL_E', 'Stable Diffusion'].includes(item.tool))
         };
 
         return new Response(JSON.stringify(groupedResults), {

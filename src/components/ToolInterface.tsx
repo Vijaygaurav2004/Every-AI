@@ -3,7 +3,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
 import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, X } from 'lucide-react'
-import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL, PERPLEXITY_API_KEY } from '../config'
+import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL, PERPLEXITY_API_KEY, OPENROUTER_API_KEY, OPENROUTER_API_URL, GROQ_API_KEY } from '../config'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -15,6 +15,7 @@ import RobotThinking from './RobotThinking'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { saveConversation } from '../utils/historyUtils'
 import rehypeRaw from 'rehype-raw';
+import Groq from 'groq-sdk';
 
 interface ToolInterfaceProps {
   toolName: string
@@ -26,6 +27,7 @@ interface Message {
   role: 'user' | 'ai';
   content: string;
   type: 'text' | 'image';
+  imageUrl?: string;
 }
 
 const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId }) => {
@@ -40,9 +42,14 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
 
   const [showNote, setShowNote] = useState(true)
 
+  const isTextTool = ['Llama-3.2', 'GPT-4', 'Claude', 'Copilot', 'Runway', 'Whisper', 'Gemini Pro 1.5', 'Groq'].includes(toolName);
   const isImageTool = toolName === 'DALL-E' || toolName === 'Stable Diffusion'
 
   const [category, setCategory] = useState('realistic')
+
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -107,53 +114,82 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
   };
 
   const sendMessage = async () => {
-    if (input.trim()) {
-      const newMessage: Message = { role: 'user', content: input, type: 'text' };
+    if (input.trim() || selectedImage) {
+      const newMessage: Message = {
+        role: 'user',
+        content: selectedImage ? 'Image uploaded by user' : input.trim(),
+        type: selectedImage ? 'image' : 'text',
+        imageUrl: selectedImage || undefined
+      };
       setMessages(prev => [...prev, newMessage]);
       setInput('');
       setIsLoading(true);
 
       try {
         await saveConversation(userId, toolName, [newMessage]);
-      } catch (error) {
-        console.error('Failed to save user message:', error);
-      }
 
-      try {
-        if (isImageTool) {
-          const response = await fetch(IMAGE_API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              prompt: input, 
-              firebaseUserId: user?.uid,
-              numSteps: numSteps,
-              aspectRatio: aspectRatio,
-              category: category
-            }),
+        let response;
+        if (['Llama-3.2', 'Claude', 'GPT-4', 'Copilot', 'Whisper', 'Runway'].includes(toolName)) {
+          const openRouterResponse = await fetch(OPENROUTER_API_URL, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+              "HTTP-Referer": `${window.location.origin}`,
+              "X-Title": "Every AI",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              "model": "meta-llama/llama-3.2-11b-vision-instruct:free",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": selectedImage ? "Describe this image in detail, including any text, objects, colors, and notable features." : newMessage.content
+                    },
+                    ...(selectedImage ? [{
+                      "type": "image_url",
+                      "image_url": {
+                        "url": selectedImage
+                      }
+                    }] : [])
+                  ]
+                }
+              ]
+            })
           });
 
-          const data = await response.json();
+          const data = await openRouterResponse.json();
+          console.log('OpenRouter API response:', data);
 
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}, message: ${data.error}, details: ${data.details}`);
-          }
-
-          if (data.image) {
-            const imageUrl = `data:image/png;base64,${data.image}`;
-            const croppedImageUrl = await cropImage(imageUrl, aspectRatio);
-            const aiMessage: Message = { role: 'ai', content: croppedImageUrl, type: 'image' };
-            setMessages(prev => [...prev, aiMessage]);
-            
-            // Save the AI's response
-            try {
-              await saveConversation(userId, toolName, [aiMessage]);
-            } catch (error) {
-              console.error('Failed to save AI image response:', error);
-            }
+          if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+            response = { response: data.choices[0].message.content };
+          } else if (data.error) {
+            throw new Error(`API Error: ${data.error.message}`);
           } else {
-            throw new Error(`Unexpected response format: ${JSON.stringify(data)}`);
+            throw new Error(`Unexpected response format from OpenRouter API: ${JSON.stringify(data)}`);
           }
+        } else if (toolName === 'Gemini Pro 1.5') {
+          try {
+            const geminiResponse = await callGeminiPro(newMessage.content, selectedImage);
+            const aiMessage: Message = { role: 'ai', content: geminiResponse, type: 'text' };
+            setMessages(prev => [...prev, aiMessage]);
+            await saveConversation(userId, toolName, [aiMessage]);
+          } catch (error) {
+            console.error('Error calling Gemini Pro 1.5:', error);
+            let errorMessage = 'An error occurred. Please try again later.';
+            if (error instanceof Error && error.message.includes('RESOURCE_EXHAUSTED')) {
+              errorMessage = 'The AI service is currently busy. Please try again in a few minutes.';
+            }
+            const errorAiMessage: Message = { 
+              role: 'ai', 
+              content: errorMessage, 
+              type: 'text' 
+            };
+            setMessages(prev => [...prev, errorAiMessage]);
+          }
+
         } else if (toolName === 'Perplexity') {
           const formattedMessages = messages.map(msg => ({
             role: msg.role === 'user' ? 'user' : 'assistant',
@@ -190,6 +226,55 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
           } else {
             throw new Error('Unexpected response format from Perplexity API');
           }
+        } else if (toolName === 'Groq') {
+          try {
+            const groqResponse = await callGroq(newMessage.content);
+            const aiMessage: Message = { role: 'ai', content: groqResponse, type: 'text' };
+            setMessages(prev => [...prev, aiMessage]);
+            await saveConversation(userId, toolName, [aiMessage]);
+          } catch (error) {
+            console.error('Error calling Groq:', error);
+            const errorAiMessage: Message = { 
+              role: 'ai', 
+              content: 'An error occurred while processing your request with Groq. Please try again later.', 
+              type: 'text' 
+            };
+            setMessages(prev => [...prev, errorAiMessage]);
+          }
+        } else if (isImageTool) {
+          const response = await fetch(IMAGE_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              prompt: input, 
+              firebaseUserId: user?.uid,
+              numSteps: numSteps,
+              aspectRatio: aspectRatio,
+              category: category
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}, message: ${data.error}, details: ${data.details}`);
+          }
+
+          if (data.image) {
+            const imageUrl = `data:image/png;base64,${data.image}`;
+            const croppedImageUrl = await cropImage(imageUrl, aspectRatio);
+            const aiMessage: Message = { role: 'ai', content: croppedImageUrl, type: 'image' };
+            setMessages(prev => [...prev, aiMessage]);
+            
+            // Save the AI's response
+            try {
+              await saveConversation(userId, toolName, [aiMessage]);
+            } catch (error) {
+              console.error('Failed to save AI image response:', error);
+            }
+          } else {
+            throw new Error(`Unexpected response format: ${JSON.stringify(data)}`);
+          }
         } else {
           const response = await fetch(TEXT_API_URL, {
             method: 'POST',
@@ -223,19 +308,19 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
             throw new Error('Unexpected response format');
           }
         }
+
+        if (response) {
+          const aiMessage: Message = { role: 'ai', content: response.response, type: 'text' };
+          setMessages(prev => [...prev, aiMessage]);
+          await saveConversation(userId, toolName, [aiMessage]);
+        }
       } catch (error) {
         console.error('Error:', error);
-        const errorMessage: Message = { role: 'ai', content: 'An error occurred. Please try again.', type: 'text' };
-        setMessages(prev => [...prev, errorMessage]);
-        
-        try {
-          await saveConversation(userId, toolName, [errorMessage]);
-        } catch (saveError) {
-          console.error('Failed to save error message:', saveError);
-        }
-      } finally {
-        setIsLoading(false);
+        setMessages(prev => [...prev, { role: 'ai', content: `An error occurred: ${error.message}`, type: 'text' }]);
       }
+
+      setIsLoading(false);
+      setSelectedImage(null);
     }
   };
 
@@ -256,29 +341,21 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
     });
   };
 
-  const renderMessage = (message: { role: 'user' | 'ai'; content: string; type: 'text' | 'image' }, index: number) => {
+  const renderMessage = (message: Message, index: number) => {
     if (message.type === 'image') {
       return (
         <div className="flex flex-col items-center">
           <img 
-            src={message.content} 
-            alt="Generated image" 
+            src={message.imageUrl || message.content} 
+            alt={message.role === 'user' ? "Uploaded image" : "Generated image"}
             className="max-w-full h-auto rounded cursor-pointer transition-transform duration-300 hover:scale-105" 
             style={{ 
               maxWidth: '512px',
               maxHeight: '512px',
               objectFit: 'contain' 
             }}
-            onClick={() => window.open(message.content, '_blank')}
+            onClick={() => window.open(message.imageUrl || message.content, '_blank')}
           />
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="mt-2"
-            onClick={() => downloadImage(message.content)}
-          >
-            <Download className="h-4 w-4 mr-2" /> Download ({aspectRatio})
-          </Button>
         </div>
       )
     } else {
@@ -347,6 +424,156 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
     return firstUserMessage.split(' ').slice(0, 5).join(' ') + '...';
   }
 
+  // const getModelForTool = (toolName: string): string => {
+  //   switch (toolName) {
+  //     case 'C':
+  //       return 'openai/gpt-3.5-turbo';
+  //     case 'Claude':
+  //       return 'anthropic/claude-2';
+  //     case 'GPT-4':
+  //       return 'openai/gpt-4';
+  //     case 'Copilot':
+  //       return 'openai/gpt-4'; // Assuming Copilot uses GPT-4
+  //     case 'Whisper':
+  //       return 'openai/whisper'; // Note: Whisper might require a different API endpoint for audio processing
+  //     case 'Runway':
+  //       return 'openai/gpt-4'; // Assuming Runway uses GPT-4, but it might require a different API for video editing
+  //     default:
+  //       return 'openai/gpt-3.5-turbo';
+  //   }
+  // };
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const maxSize = 1024; // Maximum size for width or height
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height && width > maxSize) {
+            height *= maxSize / width;
+            width = maxSize;
+          } else if (height > maxSize) {
+            width *= maxSize / height;
+            height = maxSize;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          const resizedImage = canvas.toDataURL('image/jpeg', 0.7);
+          setSelectedImage(resizedImage);
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const callGeminiPro = async (prompt: string, imageUrl: string | null, retryCount = 0): Promise<string> => {
+    const messages = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: prompt
+          }
+        ]
+      }
+    ];
+
+    if (imageUrl) {
+      messages[0].content.push({
+        type: "image_url",
+        image_url: {
+          url: imageUrl
+        }
+      });
+    }
+
+    try {
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "HTTP-Referer": `${window.location.origin}`,
+          "X-Title": "Every AI",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "google/gemini-pro-1.5-exp",
+          messages: messages
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API Error:', errorData);
+        if (response.status === 429 && retryCount < 3) {
+          const retryAfter = parseInt(response.headers.get('Retry-After') || '5');
+          console.log(`Rate limited. Retrying after ${retryAfter} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          return callGeminiPro(prompt, imageUrl, retryCount + 1);
+        }
+        throw new Error(`HTTP error! status: ${response.status}, message: ${JSON.stringify(errorData)}`);
+      }
+
+      const data = await response.json();
+      console.log('Gemini Pro API response:', data);
+
+      if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+        return data.choices[0].message.content;
+      } else if (data.error) {
+        throw new Error(`API Error: ${JSON.stringify(data.error)}`);
+      } else {
+        console.error('Unexpected response format:', data);
+        throw new Error('Unexpected response format from Gemini Pro API');
+      }
+    } catch (error) {
+      console.error('Error calling Gemini Pro API:', error);
+      throw error;
+    }
+  };
+
+  const callGroq = async (prompt: string): Promise<string> => {
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: "llama-3.2-11b-vision-preview",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.7,
+          max_tokens: 2048,
+          top_p: 1,
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Groq API error: ${response.status} ${response.statusText}, ${JSON.stringify(errorData)}`);
+      }
+
+      const data = await response.json();
+      return data.choices[0]?.message?.content || "No response from Groq";
+    } catch (error) {
+      console.error('Error calling Groq API:', error);
+      throw error;
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-white">
       <header className="bg-gray-800 p-4 flex items-center shadow-md">
@@ -411,6 +638,25 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
             className="flex-grow bg-gray-700 text-white border-gray-600 focus:border-blue-500 transition-colors duration-300"
             disabled={isLoading}
           />
+          {isTextTool && (
+            <>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                style={{ display: 'none' }}
+                ref={fileInputRef}
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-gray-700 text-white border-gray-600 hover:bg-gray-600"
+              >
+                <ImageIcon className="h-4 w-4" />
+              </Button>
+            </>
+          )}
           {isImageTool && (
             <>
               <Tooltip content="Number of diffusion steps">
@@ -433,17 +679,6 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
                   <SelectItem value="16:9" className="text-white hover:bg-gray-600">16:9 (Landscape)</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="w-[120px] bg-gray-700 text-white border-gray-600 focus:border-blue-500">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-700 text-white border-gray-600">
-                  <SelectItem value="realistic" className="text-white hover:bg-gray-600">Realistic</SelectItem>
-                  <SelectItem value="cartoon" className="text-white hover:bg-gray-600">Cartoon</SelectItem>
-                  <SelectItem value="anime" className="text-white hover:bg-gray-600">Anime</SelectItem>
-                  <SelectItem value="painting" className="text-white hover:bg-gray-600">Painting</SelectItem>
-                </SelectContent>
-              </Select>
             </>
           )}
           <Button 
@@ -461,6 +696,11 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
           </Button>
         </div>
       </div>
+      {selectedImage && (
+        <div className="mt-2 flex justify-center">
+          <img src={selectedImage} alt="Selected" className="max-w-xs max-h-32 object-contain rounded" />
+        </div>
+      )}
     </div>
   )
 }
