@@ -34,7 +34,7 @@ export default {
 
         const ai = new Ai(env.AI);
         let enhancedPrompt = generateCategoryPrompt(prompt, category);
-        
+
         // Modify prompt based on aspect ratio
         if (aspectRatio === '16:9') {
           enhancedPrompt += ' The image should be composed for a wide, landscape format.';
@@ -95,7 +95,7 @@ export default {
   },
 };
 
-function generateCategoryPrompt(basePrompt: string, category: string): string {
+const generateCategoryPrompt = (basePrompt: string, category: string): string => {
   const categoryPrompts = {
     realistic: "Create a photorealistic image of",
     cartoon: "Generate a cartoon-style illustration of",
@@ -105,4 +105,4 @@ function generateCategoryPrompt(basePrompt: string, category: string): string {
 
   const categoryPrefix = categoryPrompts[category as keyof typeof categoryPrompts] || categoryPrompts.realistic;
   return `${categoryPrefix} ${basePrompt}. Focus on intricate details and accurate representation of the style.`;
-}
+};

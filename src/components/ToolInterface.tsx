@@ -15,11 +15,8 @@ import RobotThinking from './RobotThinking'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { saveConversation } from '../utils/historyUtils'
 import rehypeRaw from 'rehype-raw';
-<<<<<<< HEAD
 import Groq from 'groq-sdk';
-=======
 import { Plugin } from 'unified';
->>>>>>> origin/main
 
 interface ToolInterfaceProps {
   toolName: string
@@ -33,6 +30,19 @@ interface Message {
   type: 'text' | 'image';
   imageUrl?: string;
 }
+
+// Add this function at the top of the file, outside the component
+const generateCategoryPrompt = (basePrompt: string, category: string): string => {
+  const categoryPrompts = {
+    realistic: "Create a photorealistic image of",
+    cartoon: "Generate a cartoon-style illustration of",
+    anime: "Create an anime-style drawing of",
+    painting: "Paint a detailed artistic representation of",
+  };
+
+  const categoryPrefix = categoryPrompts[category as keyof typeof categoryPrompts] || categoryPrompts.realistic;
+  return `${categoryPrefix} ${basePrompt}. Focus on intricate details and accurate representation of the style.`;
+};
 
 const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId }) => {
   const [user] = useAuthState(auth);
@@ -246,11 +256,12 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
             setMessages(prev => [...prev, errorAiMessage]);
           }
         } else if (isImageTool) {
+          const enhancedPrompt = generateCategoryPrompt(input, category);
           const response = await fetch(IMAGE_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              prompt: input, 
+              prompt: enhancedPrompt, 
               firebaseUserId: user?.uid,
               numSteps: numSteps,
               aspectRatio: aspectRatio,
@@ -681,6 +692,17 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
                   <SelectItem value="1:1" className="text-white hover:bg-gray-600">1:1 (Square)</SelectItem>
                   <SelectItem value="9:16" className="text-white hover:bg-gray-600">9:16 (Portrait)</SelectItem>
                   <SelectItem value="16:9" className="text-white hover:bg-gray-600">16:9 (Landscape)</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="w-[120px] bg-gray-700 text-white border-gray-600 focus:border-blue-500">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-700 text-white border-gray-600">
+                  <SelectItem value="realistic" className="text-white hover:bg-gray-600">Realistic</SelectItem>
+                  <SelectItem value="cartoon" className="text-white hover:bg-gray-600">Cartoon</SelectItem>
+                  <SelectItem value="anime" className="text-white hover:bg-gray-600">Anime</SelectItem>
+                  <SelectItem value="painting" className="text-white hover:bg-gray-600">Painting</SelectItem>
                 </SelectContent>
               </Select>
             </>
