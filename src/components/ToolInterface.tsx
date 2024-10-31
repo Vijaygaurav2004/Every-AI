@@ -17,7 +17,6 @@ import { saveConversation } from '../utils/historyUtils'
 import rehypeRaw from 'rehype-raw';
 import Groq from 'groq-sdk';
 import { Plugin } from 'unified';
-// import { Textarea } from './ui/textarea';
 
 interface ToolInterfaceProps {
   toolName: string
@@ -363,7 +362,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
   const renderMessage = (message: Message, index: number) => {
     if (message.type === 'image') {
       return (
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center gap-2">
           <img 
             src={message.imageUrl || message.content} 
             alt={message.role === 'user' ? "Uploaded image" : "Generated image"}
@@ -375,6 +374,17 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
             }}
             onClick={() => window.open(message.imageUrl || message.content, '_blank')}
           />
+          {message.role === 'ai' && (
+            <Button
+              onClick={() => downloadImage(message.imageUrl || message.content)}
+              variant="outline"
+              size="sm"
+              className="w-full mt-2 bg-gray-700 hover:bg-gray-600"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download Image
+            </Button>
+          )}
         </div>
       )
     } else {

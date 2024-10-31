@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { X, Maximize2, Minimize2, Send, Image as ImageIcon } from 'lucide-react'
+import { X, Maximize2, Minimize2, Send, Image as ImageIcon, Download } from 'lucide-react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
@@ -55,7 +55,31 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ toolName, onClose }) => {
                 {message.type === 'text' ? (
                   message.content
                 ) : (
-                  <img src={message.content} alt="Generated image" className="max-w-full h-auto rounded" />
+                  <div className="flex flex-col gap-2">
+                    <img 
+                      src={message.content} 
+                      alt="Generated image" 
+                      className="max-w-full h-auto rounded" 
+                    />
+                    {message.role === 'ai' && (
+                      <Button
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = message.content;
+                          link.download = `generated-image-${Date.now()}.png`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2 bg-gray-700 hover:bg-gray-600"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download Image
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
