@@ -17,7 +17,7 @@ import { saveConversation } from '../utils/historyUtils'
 import rehypeRaw from 'rehype-raw';
 import Groq from 'groq-sdk';
 import { Plugin } from 'unified';
-import { Textarea } from './ui/textarea';
+// import { Textarea } from './ui/textarea';
 
 interface ToolInterfaceProps {
   toolName: string
