@@ -79,5 +79,13 @@ export const aiTools = [
     category: "Text",
     icons: [MessageSquare, MessageSquare, MessageSquare],
     description: "Fast language model for natural conversations and text generation."
+  },
+
+  {
+    id: 12,
+    name: "Blog Generator",
+    category: "Text",
+    icons: [MessageSquare, MessageSquare, MessageSquare],
+    description: "AI-powered blog content generator that creates detailed, well-structured blog posts."
   }
 ]

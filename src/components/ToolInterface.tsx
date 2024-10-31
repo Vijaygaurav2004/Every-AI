@@ -17,6 +17,7 @@ import { saveConversation } from '../utils/historyUtils'
 import rehypeRaw from 'rehype-raw';
 import Groq from 'groq-sdk';
 import { Plugin } from 'unified';
+import { Textarea } from './ui/textarea';
 
 interface ToolInterfaceProps {
   toolName: string
@@ -64,6 +65,10 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [blogTopic, setBlogTopic] = useState('');
+  const [keywords, setKeywords] = useState('');
+  const [targetAudience, setTargetAudience] = useState('');
+  const [tone, setTone] = useState('professional');
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -153,7 +158,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
-              "model": "meta-llama/llama-3.2-11b-vision-instruct:free",
+              "model": "meta-llama/llama-3.2-11b-vision-instruct",
               "messages": [
                 {
                   "role": "user",
@@ -173,7 +178,6 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
               ]
             })
           });
-
           const data = await openRouterResponse.json();
           console.log('OpenRouter API response:', data);
 
@@ -589,6 +593,106 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
     }
   };
 
+  const generateInitialPrompt = (topic: string, keywords: string, audience: string, tone: string) => {
+    return `Generate a detailed blog outline about "${topic}". 
+    Keywords to include: ${keywords}. 
+    Target audience: ${audience}. 
+    Tone: ${tone}. 
+    Please provide a structured outline with introduction, main points, and conclusion.
+    The response should be detailed and well-researched.`;
+  };
+
+  const generateFinalBlogPrompt = (outline: string) => {
+    return `Using this outline: ${outline}
+
+    Create a comprehensive blog post that is at least 3000 words. The blog should:
+    1. Have a compelling introduction that hooks the reader
+    2. Include well-researched main points with examples and data
+    3. Have smooth transitions between sections
+    4. Include relevant statistics and expert quotes where applicable
+    5. End with a strong conclusion that summarizes key points
+    6. Use proper formatting with headers, subheaders, and paragraphs
+    7. Include references or citations where applicable
+    8. Make it less than grade 8 english
+
+    Format the response in markdown with proper headings (##) and sections.`;
+  };
+
+  const generateBlog = async () => {
+    if (!blogTopic.trim()) return;
+    
+    setIsLoading(true);
+    try {
+      // First API call to get the outline
+      const outlinePrompt = generateInitialPrompt(blogTopic, keywords, targetAudience, tone);
+      const outlineResponse = await fetch('https://api.perplexity.ai/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-sonar-small-128k-online',
+          messages: [{ role: 'user', content: outlinePrompt }],
+          temperature: 0.7,
+          max_tokens: 4000,
+        }),
+      });
+
+      if (!outlineResponse.ok) {
+        throw new Error(`Outline API error: ${outlineResponse.status}`);
+      }
+
+      const outlineData = await outlineResponse.json();
+      console.log('Outline Response:', outlineData);
+      
+      const outline = outlineData.choices[0].message.content;
+
+      // Second API call to generate the full blog
+      const blogResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=AIzaSyDNp-gscV7HSPlV7WyKNtdYP2b7KQyle_w`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: generateFinalBlogPrompt(outline)
+            }]
+          }]
+        })
+      });
+
+      if (!blogResponse.ok) {
+        throw new Error(`Blog API error: ${blogResponse.status}`);
+      }
+
+      const blogData = await blogResponse.json();
+      console.log('Blog Response:', blogData);
+      
+      const blogContent = blogData.candidates[0].content.parts[0].text;
+
+      // Add the blog to messages
+      const newMessage: Message = {
+        role: 'ai',
+        content: blogContent,
+        type: 'text'
+      };
+
+      setMessages(prev => [...prev, newMessage]);
+      await saveConversation(userId, toolName, [newMessage]);
+
+    } catch (error) {
+      console.error('Error generating blog:', error);
+      setMessages(prev => [...prev, {
+        role: 'ai',
+        content: `Error generating blog post: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+        type: 'text'
+      }]);
+    }
+    setIsLoading(false);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-white">
       <header className="bg-gray-800 p-4 flex items-center shadow-md">
@@ -644,82 +748,125 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
           )}
         </AnimatePresence>
         <div className="flex space-x-2">
-          <Input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={isImageTool ? "Describe the image you want to generate..." : "Type your message..."}
-            onKeyPress={(e) => e.key === 'Enter' && !isLoading && sendMessage()}
-            className="flex-grow bg-gray-700 text-white border-gray-600 focus:border-blue-500 transition-colors duration-300"
-            disabled={isLoading}
-          />
-          {isTextTool && (
-            <>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                style={{ display: 'none' }}
-                ref={fileInputRef}
+          {toolName === 'Blog Generator' ? (
+            <div className="space-y-4 mb-4 w-full">
+              <Input
+                placeholder="Enter blog topic"
+                value={blogTopic}
+                onChange={(e) => setBlogTopic(e.target.value)}
+                className="bg-gray-700 text-white border-gray-600"
               />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => fileInputRef.current?.click()}
-                className="bg-gray-700 text-white border-gray-600 hover:bg-gray-600"
+              <Input
+                placeholder="Enter keywords (comma-separated)"
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                className="bg-gray-700 text-white border-gray-600"
+              />
+              <Input
+                placeholder="Target audience"
+                value={targetAudience}
+                onChange={(e) => setTargetAudience(e.target.value)}
+                className="bg-gray-700 text-white border-gray-600"
+              />
+              <Select value={tone} onValueChange={setTone}>
+                <SelectTrigger className="w-full bg-gray-700 text-white border-gray-600">
+                  <SelectValue placeholder="Select tone" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-700 text-white border-gray-600">
+                  <SelectItem value="professional">Professional</SelectItem>
+                  <SelectItem value="casual">Casual</SelectItem>
+                  <SelectItem value="technical">Technical</SelectItem>
+                  <SelectItem value="conversational">Conversational</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button 
+                onClick={generateBlog}
+                disabled={isLoading || !blogTopic.trim()}
+                className="w-full bg-blue-600 hover:bg-blue-700"
               >
-                <ImageIcon className="h-4 w-4" />
+                {isLoading ? <Loader className="h-5 w-5 animate-spin" /> : 'Generate Blog'}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Input
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={isImageTool ? "Describe the image you want to generate..." : "Type your message..."}
+                onKeyPress={(e) => e.key === 'Enter' && !isLoading && sendMessage()}
+                className="flex-grow bg-gray-700 text-white border-gray-600 focus:border-blue-500 transition-colors duration-300"
+                disabled={isLoading}
+              />
+              {isTextTool && (
+                <>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    style={{ display: 'none' }}
+                    ref={fileInputRef}
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-gray-700 text-white border-gray-600 hover:bg-gray-600"
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+              {isImageTool && (
+                <>
+                  <Tooltip content="Number of diffusion steps">
+                    <Input
+                      type="number"
+                      value={numSteps}
+                      onChange={(e) => setNumSteps(Math.min(Math.max(1, parseInt(e.target.value)), 8))}
+                      className="w-20 bg-gray-700 text-white border-gray-600 focus:border-blue-500 transition-colors duration-300"
+                      min="1"
+                      max="8"
+                    />
+                  </Tooltip>
+                  <Select value={aspectRatio} onValueChange={setAspectRatio}>
+                    <SelectTrigger className="w-[120px] bg-gray-700 text-white border-gray-600 focus:border-blue-500">
+                      <SelectValue placeholder="Aspect Ratio" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-700 text-white border-gray-600">
+                      <SelectItem value="1:1" className="text-white hover:bg-gray-600">1:1 (Square)</SelectItem>
+                      <SelectItem value="9:16" className="text-white hover:bg-gray-600">9:16 (Portrait)</SelectItem>
+                      <SelectItem value="16:9" className="text-white hover:bg-gray-600">16:9 (Landscape)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger className="w-[120px] bg-gray-700 text-white border-gray-600 focus:border-blue-500">
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-700 text-white border-gray-600">
+                      <SelectItem value="realistic" className="text-white hover:bg-gray-600">Realistic</SelectItem>
+                      <SelectItem value="cartoon" className="text-white hover:bg-gray-600">Cartoon</SelectItem>
+                      <SelectItem value="anime" className="text-white hover:bg-gray-600">Anime</SelectItem>
+                      <SelectItem value="painting" className="text-white hover:bg-gray-600">Painting</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+              <Button 
+                onClick={sendMessage} 
+                disabled={isLoading} 
+                className="bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-300"
+              >
+                {isLoading ? (
+                  <Loader className="h-5 w-5 animate-spin" />
+                ) : isImageTool ? (
+                  <ImageIcon className="h-5 w-5" />
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
               </Button>
             </>
           )}
-          {isImageTool && (
-            <>
-              <Tooltip content="Number of diffusion steps">
-                <Input
-                  type="number"
-                  value={numSteps}
-                  onChange={(e) => setNumSteps(Math.min(Math.max(1, parseInt(e.target.value)), 8))}
-                  className="w-20 bg-gray-700 text-white border-gray-600 focus:border-blue-500 transition-colors duration-300"
-                  min="1"
-                  max="8"
-                />
-              </Tooltip>
-              <Select value={aspectRatio} onValueChange={setAspectRatio}>
-                <SelectTrigger className="w-[120px] bg-gray-700 text-white border-gray-600 focus:border-blue-500">
-                  <SelectValue placeholder="Aspect Ratio" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-700 text-white border-gray-600">
-                  <SelectItem value="1:1" className="text-white hover:bg-gray-600">1:1 (Square)</SelectItem>
-                  <SelectItem value="9:16" className="text-white hover:bg-gray-600">9:16 (Portrait)</SelectItem>
-                  <SelectItem value="16:9" className="text-white hover:bg-gray-600">16:9 (Landscape)</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="w-[120px] bg-gray-700 text-white border-gray-600 focus:border-blue-500">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-700 text-white border-gray-600">
-                  <SelectItem value="realistic" className="text-white hover:bg-gray-600">Realistic</SelectItem>
-                  <SelectItem value="cartoon" className="text-white hover:bg-gray-600">Cartoon</SelectItem>
-                  <SelectItem value="anime" className="text-white hover:bg-gray-600">Anime</SelectItem>
-                  <SelectItem value="painting" className="text-white hover:bg-gray-600">Painting</SelectItem>
-                </SelectContent>
-              </Select>
-            </>
-          )}
-          <Button 
-            onClick={sendMessage} 
-            disabled={isLoading} 
-            className="bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-300"
-          >
-            {isLoading ? (
-              <Loader className="h-5 w-5 animate-spin" />
-            ) : isImageTool ? (
-              <ImageIcon className="h-5 w-5" />
-            ) : (
-              <Send className="h-5 w-5" />
-            )}
-          </Button>
         </div>
       </div>
       {selectedImage && (
