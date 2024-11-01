@@ -334,7 +334,11 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
         }
       } catch (error) {
         console.error('Error:', error);
-        setMessages(prev => [...prev, { role: 'ai', content: `An error occurred: ${error.message}`, type: 'text' }]);
+        setMessages(prev => [...prev, { 
+          role: 'ai', 
+          content: `An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+          type: 'text' 
+        }]);
       }
 
       setIsLoading(false);
@@ -507,26 +511,24 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
   };
 
   const callGeminiPro = async (prompt: string, imageUrl: string | null, retryCount = 0): Promise<string> => {
-    const messages = [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: prompt
-          }
-        ]
-      }
-    ];
-
-    if (imageUrl) {
-      messages[0].content.push({
-        type: "image_url",
-        image_url: {
-          url: imageUrl
+    const messages = [{
+      role: "user",
+      content: imageUrl ? [
+        {
+          type: "text",
+          text: prompt
+        },
+        {
+          type: "text",
+          text: imageUrl
         }
-      });
-    }
+      ] : [
+        {
+          type: "text",
+          text: prompt
+        }
+      ]
+    }];
 
     try {
       const response = await fetch(OPENROUTER_API_URL, {
