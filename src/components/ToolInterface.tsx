@@ -3,7 +3,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
 import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, X } from 'lucide-react'
-import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL, PERPLEXITY_API_KEY, OPENROUTER_API_KEY, OPENROUTER_API_URL, GROQ_API_KEY } from '../config'
+import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL, PERPLEXITY_API_KEY, OPENROUTER_API_KEY, OPENROUTER_API_URL, GROQ_API_KEY, TOGETHER_API_KEY } from '../config'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -57,7 +57,7 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
   const [showNote, setShowNote] = useState(true)
 
   const isTextTool = ['Llama-3.2', 'GPT-4', 'Claude', 'Copilot', 'Runway', 'Whisper', 'Gemini Pro 1.5', 'Groq'].includes(toolName);
-  const isImageTool = toolName === 'DALL-E' || toolName === 'Stable Diffusion'
+  const isImageTool = toolName === 'DALL-E' || toolName === 'Stable Diffusion' ;
 
   const [category, setCategory] = useState('realistic')
 
@@ -257,6 +257,53 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
               type: 'text' 
             };
             setMessages(prev => [...prev, errorAiMessage]);
+          }
+        } else if (toolName === 'FLUX 1.1 PRO') {
+          try {
+            const response = await fetch('https://api.together.xyz/v1/images/generations', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${TOGETHER_API_KEY}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify({
+                model: "black-forest-labs/FLUX.1.1-pro",
+                prompt: input,
+                n: 1,
+                size: "1024x1024",
+                response_format: "url"
+              })
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => null);
+              throw new Error(`API error: ${response.status} - ${errorData ? JSON.stringify(errorData) : response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            if (data.data && data.data[0] && data.data[0].url) {
+              const aiMessage: Message = {
+                role: 'ai',
+                content: data.data[0].url,
+                type: 'image'
+              };
+              setMessages(prev => [...prev, aiMessage]);
+              await saveConversation(userId, toolName, [aiMessage]);
+            } else {
+              throw new Error('Unexpected response format from FLUX API');
+            }
+          } catch (error) {
+            console.error('Error generating image with FLUX:', error);
+            const errorMessage: Message = {
+              role: 'ai',
+              content: `Error generating image: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              type: 'text'
+            };
+            setMessages(prev => [...prev, errorMessage]);
+          } finally {
+            setIsLoading(false);
           }
         } else if (isImageTool) {
           const enhancedPrompt = generateCategoryPrompt(input, category);

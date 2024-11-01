@@ -87,5 +87,13 @@ export const aiTools = [
     category: "Text",
     icons: [MessageSquare, MessageSquare, MessageSquare],
     description: "AI-powered blog content generator that creates detailed, well-structured blog posts."
+  },
+
+  {
+    id: 13,
+    name: "FLUX 1.1 PRO",
+    category: "Image",
+    icons: [ImageIcon, ImageIcon, ImageIcon],
+    description: "Advanced AI image generation model by Black Forest Labs"
   }
 ]
