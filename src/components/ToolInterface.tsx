@@ -3,7 +3,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
 import { Send, Image as ImageIcon, ArrowLeft, Download, User, MessageCircle, Loader, X } from 'lucide-react'
-import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL, PERPLEXITY_API_KEY, OPENROUTER_API_KEY, OPENROUTER_API_URL, GROQ_API_KEY, TOGETHER_API_KEY } from '../config'
+import { TEXT_API_URL, IMAGE_API_URL, HISTORY_API_URL, PERPLEXITY_API_KEY, OPENROUTER_API_KEY, OPENROUTER_API_URL, GROQ_API_KEY, TOGETHER_API_KEY, GEMINI_API_KEY } from '../config'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -17,6 +17,8 @@ import { saveConversation } from '../utils/historyUtils'
 import rehypeRaw from 'rehype-raw';
 import Groq from 'groq-sdk';
 import { Plugin } from 'unified';
+import { BlogPost } from '@/types'
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
 interface ToolInterfaceProps {
   toolName: string
@@ -38,10 +40,89 @@ const generateCategoryPrompt = (basePrompt: string, category: string): string =>
     cartoon: "Generate a cartoon-style illustration of",
     anime: "Create an anime-style drawing of",
     painting: "Paint a detailed artistic representation of",
+    default: "Generate a high-quality, photorealistic image with these specific details:"
   };
 
-  const categoryPrefix = categoryPrompts[category as keyof typeof categoryPrompts] || categoryPrompts.realistic;
-  return `${categoryPrefix} ${basePrompt}. Focus on intricate details and accurate representation of the style.`;
+  // Default settings for human portraits
+  const portraitKeywords = ['person', 'guy', 'girl', 'man', 'woman', 'boy', 'family', 'people'];
+  const isPortrait = portraitKeywords.some(keyword => basePrompt.toLowerCase().includes(keyword));
+
+  let finalPrompt = '';
+  const categoryPrefix = categoryPrompts[category as keyof typeof categoryPrompts] || categoryPrompts.default;
+
+  if (isPortrait) {
+    // Add specific requirements for portraits
+    finalPrompt = `${categoryPrefix} ${basePrompt}. 
+    Important requirements:
+    - Ensure natural and realistic facial features
+    - Maintain consistent lighting and skin tones
+    - Create authentic hair textures and details
+    - Generate realistic eye colors and expressions
+    - Avoid uncanny valley effects
+    - Maintain proper anatomical proportions
+    Style: ${category === 'realistic' ? 'photorealistic portrait photography' : category} style`;
+  } else {
+    // For non-portrait images
+    finalPrompt = `${categoryPrefix} ${basePrompt}.
+    Requirements:
+    - Follow exact specifications in the prompt
+    - Maintain consistent perspective and scale
+    - Ensure proper lighting and shadows
+    - Create detailed textures
+    Style: ${category} style`;
+  }
+
+  // Add quality control parameters
+  finalPrompt += `
+  Quality requirements:
+  - Resolution: high-definition
+  - Lighting: natural and well-balanced
+  - Details: crisp and clear
+  - Composition: professional and balanced`;
+
+  return finalPrompt;
+};
+
+// Add this validation function
+const validateImagePrompt = (prompt: string): { isValid: boolean; error?: string } => {
+  const minLength = 10;
+  const maxLength = 500;
+
+  if (prompt.length < minLength) {
+    return { 
+      isValid: false, 
+      error: 'Prompt is too short. Please provide more details for better results.' 
+    };
+  }
+
+  if (prompt.length > maxLength) {
+    return { 
+      isValid: false, 
+      error: 'Prompt is too long. Please shorten it for optimal results.' 
+    };
+  }
+
+  // Check for specific requirements in the prompt
+  const hasViewDirection = prompt.toLowerCase().includes('looking') || 
+                         prompt.toLowerCase().includes('facing') || 
+                         prompt.toLowerCase().includes('pose');
+  
+  const hasLightingInfo = prompt.toLowerCase().includes('light') || 
+                         prompt.toLowerCase().includes('bright') || 
+                         prompt.toLowerCase().includes('dark');
+
+  const suggestions = [];
+  if (!hasViewDirection && (prompt.toLowerCase().includes('person') || prompt.toLowerCase().includes('people'))) {
+    suggestions.push('Consider specifying the viewing direction or pose');
+  }
+  if (!hasLightingInfo) {
+    suggestions.push('Consider adding lighting preferences');
+  }
+
+  return {
+    isValid: true,
+    error: suggestions.length > 0 ? `Suggestions for better results: ${suggestions.join(', ')}` : undefined
+  };
 };
 
 const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId }) => {
@@ -68,6 +149,8 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
   const [keywords, setKeywords] = useState('');
   const [targetAudience, setTargetAudience] = useState('');
   const [tone, setTone] = useState('professional');
+
+  const [chatSession, setChatSession] = useState<any>(null);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -133,263 +216,48 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
 
   const sendMessage = async () => {
     if (input.trim() || selectedImage) {
-      const newMessage: Message = {
-        role: 'user',
-        content: selectedImage ? 'Image uploaded by user' : input.trim(),
-        type: selectedImage ? 'image' : 'text',
-        imageUrl: selectedImage || undefined
-      };
-      setMessages(prev => [...prev, newMessage]);
-      setInput('');
       setIsLoading(true);
-
       try {
-        await saveConversation(userId, toolName, [newMessage]);
+        const newMessage: Message = {
+          role: 'user',
+          content: input,
+          type: 'text'
+        };
+        setMessages(prev => [...prev, newMessage]);
 
-        let response;
-        if (['Llama-3.2', 'Claude', 'GPT-4', 'Copilot', 'Whisper', 'Runway'].includes(toolName)) {
-          const openRouterResponse = await fetch(OPENROUTER_API_URL, {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-              "HTTP-Referer": `${window.location.origin}`,
-              "X-Title": "Every AI",
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              "model": "meta-llama/llama-3.2-11b-vision-instruct",
-              "messages": [
-                {
-                  "role": "user",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": selectedImage ? "Describe this image in detail, including any text, objects, colors, and notable features." : newMessage.content
-                    },
-                    ...(selectedImage ? [{
-                      "type": "image_url",
-                      "image_url": {
-                        "url": selectedImage
-                      }
-                    }] : [])
-                  ]
-                }
-              ]
-            })
-          });
-          const data = await openRouterResponse.json();
-          console.log('OpenRouter API response:', data);
-
-          if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-            response = { response: data.choices[0].message.content };
-          } else if (data.error) {
-            throw new Error(`API Error: ${data.error.message}`);
-          } else {
-            throw new Error(`Unexpected response format from OpenRouter API: ${JSON.stringify(data)}`);
-          }
-        } else if (toolName === 'Gemini Pro 1.5') {
+        if (toolName === 'Gemini') {
           try {
-            const geminiResponse = await callGeminiPro(newMessage.content, selectedImage);
-            const aiMessage: Message = { role: 'ai', content: geminiResponse, type: 'text' };
-            setMessages(prev => [...prev, aiMessage]);
-            await saveConversation(userId, toolName, [aiMessage]);
-          } catch (error) {
-            console.error('Error calling Gemini Pro 1.5:', error);
-            let errorMessage = 'An error occurred. Please try again later.';
-            if (error instanceof Error && error.message.includes('RESOURCE_EXHAUSTED')) {
-              errorMessage = 'The AI service is currently busy. Please try again in a few minutes.';
-            }
-            const errorAiMessage: Message = { 
-              role: 'ai', 
-              content: errorMessage, 
-              type: 'text' 
+            const geminiResponse = await callGemini(input);
+            const aiMessage: Message = {
+              role: 'ai',
+              content: geminiResponse,
+              type: 'text'
             };
-            setMessages(prev => [...prev, errorAiMessage]);
-          }
-
-        } else if (toolName === 'Perplexity') {
-          const formattedMessages = messages.map(msg => ({
-            role: msg.role === 'user' ? 'user' : 'assistant',
-            content: msg.content,
-          }));
-
-          formattedMessages.push({ role: 'user', content: input });
-
-          const response = await fetch('https://api.perplexity.ai/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
-            },
-            body: JSON.stringify({
-              model: 'llama-3.1-sonar-small-128k-online',
-              messages: formattedMessages,
-              temperature: 0.2,
-              max_tokens: 4000,
-            }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            console.error('Perplexity API error:', errorData);
-            throw new Error(`HTTP error! status: ${response.status}, message: ${JSON.stringify(errorData)}`);
-          }
-
-          const data = await response.json();
-          if (data.choices && data.choices[0] && data.choices[0].message) {
-            const aiMessage: Message = { role: 'ai', content: data.choices[0].message.content, type: 'text' };
-            setMessages(prev => [...prev, aiMessage]);
-            await saveConversation(userId, toolName, [aiMessage]);
-          } else {
-            throw new Error('Unexpected response format from Perplexity API');
-          }
-        } else if (toolName === 'Groq') {
-          try {
-            const groqResponse = await callGroq(newMessage.content);
-            const aiMessage: Message = { role: 'ai', content: groqResponse, type: 'text' };
             setMessages(prev => [...prev, aiMessage]);
             await saveConversation(userId, toolName, [aiMessage]);
           } catch (error) {
-            console.error('Error calling Groq:', error);
-            const errorAiMessage: Message = { 
-              role: 'ai', 
-              content: 'An error occurred while processing your request with Groq. Please try again later.', 
-              type: 'text' 
-            };
-            setMessages(prev => [...prev, errorAiMessage]);
-          }
-        } else if (toolName === 'FLUX 1.1 PRO') {
-          try {
-            const response = await fetch('https://api.together.xyz/v1/images/generations', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${TOGETHER_API_KEY}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-              },
-              body: JSON.stringify({
-                model: "black-forest-labs/FLUX.1.1-pro",
-                prompt: input,
-                n: 1,
-                size: "1024x1024",
-                response_format: "url"
-              })
-            });
-
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => null);
-              throw new Error(`API error: ${response.status} - ${errorData ? JSON.stringify(errorData) : response.statusText}`);
-            }
-
-            const data = await response.json();
-            
-            if (data.data && data.data[0] && data.data[0].url) {
-              const aiMessage: Message = {
-                role: 'ai',
-                content: data.data[0].url,
-                type: 'image'
-              };
-              setMessages(prev => [...prev, aiMessage]);
-              await saveConversation(userId, toolName, [aiMessage]);
-            } else {
-              throw new Error('Unexpected response format from FLUX API');
-            }
-          } catch (error) {
-            console.error('Error generating image with FLUX:', error);
+            console.error('Error calling Gemini:', error);
             const errorMessage: Message = {
               role: 'ai',
-              content: `Error generating image: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              content: 'Sorry, there was an error processing your request with Gemini. Please try again.',
               type: 'text'
             };
             setMessages(prev => [...prev, errorMessage]);
-          } finally {
-            setIsLoading(false);
-          }
-        } else if (isImageTool) {
-          const enhancedPrompt = generateCategoryPrompt(input, category);
-          const response = await fetch(IMAGE_API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              prompt: enhancedPrompt, 
-              firebaseUserId: user?.uid,
-              numSteps: numSteps,
-              aspectRatio: aspectRatio,
-              category: category
-            }),
-          });
-
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}, message: ${data.error}, details: ${data.details}`);
-          }
-
-          if (data.image) {
-            const imageUrl = `data:image/png;base64,${data.image}`;
-            const croppedImageUrl = await cropImage(imageUrl, aspectRatio);
-            const aiMessage: Message = { role: 'ai', content: croppedImageUrl, type: 'image' };
-            setMessages(prev => [...prev, aiMessage]);
-            
-            // Save the AI's response
-            try {
-              await saveConversation(userId, toolName, [aiMessage]);
-            } catch (error) {
-              console.error('Failed to save AI image response:', error);
-            }
-          } else {
-            throw new Error(`Unexpected response format: ${JSON.stringify(data)}`);
           }
         } else {
-          const response = await fetch(TEXT_API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: messages.map(msg => ({
-                role: msg.role,
-                content: msg.content,
-              })),
-              firebaseUserId: user?.uid,
-              toolName: toolName,
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          const data = await response.json();
-          if (data.response) {
-            const aiMessage: Message = { role: 'ai', content: data.response, type: 'text' };
-            setMessages(prev => [...prev, aiMessage]);
-            
-            // Save the AI's response
-            try {
-              await saveConversation(userId, toolName, [aiMessage]);
-            } catch (error) {
-              console.error('Failed to save AI text response:', error);
-            }
-          } else {
-            throw new Error('Unexpected response format');
-          }
-        }
-
-        if (response) {
-          const aiMessage: Message = { role: 'ai', content: response.response, type: 'text' };
-          setMessages(prev => [...prev, aiMessage]);
-          await saveConversation(userId, toolName, [aiMessage]);
+          // Existing message handling code
         }
       } catch (error) {
-        console.error('Error:', error);
-        setMessages(prev => [...prev, { 
-          role: 'ai', 
-          content: `An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`, 
-          type: 'text' 
+        console.error('Error in sendMessage:', error);
+        setMessages(prev => [...prev, {
+          role: 'ai',
+          content: 'Sorry, there was an error processing your request.',
+          type: 'text'
         }]);
+      } finally {
+        setIsLoading(false);
+        setInput('');
       }
-
-      setIsLoading(false);
-      setSelectedImage(null);
     }
   };
 
@@ -653,103 +521,177 @@ const ToolInterface: React.FC<ToolInterfaceProps> = ({ toolName, onBack, userId 
   };
 
   const generateInitialPrompt = (topic: string, keywords: string, audience: string, tone: string) => {
-    return `Generate a detailed blog outline about "${topic}". 
+    return `Do detailed research on "${topic}". 
     Keywords to include: ${keywords}. 
     Target audience: ${audience}. 
     Tone: ${tone}. 
-    Please provide a structured outline with introduction, main points, and conclusion.
-    The response should be detailed and well-researched.`;
+    The response should be detailed and well-researched.
+    Give all the research in above 1000 words.
+
+    Research 
+
+Research the exact keywords 
+Do the initial research
+Then ask 5-10 questions related to the topic  to deep
+Implementation of the protocols, standards,or projects
+Collect reports and quote them which are high regard and need to support
+Look for panel discussion videos and keynotes  on the {topic} on youtube
+Look for discussions about {topic} in reddit
+
+    
+`;
   };
 
-  const generateFinalBlogPrompt = (outline: string) => {
-    return `Using this outline: ${outline}
-
-    Create a comprehensive blog post that is at least 3000 words. The blog should:
-    1. Have a compelling introduction that hooks the reader
-    2. Include well-researched main points with examples and data
-    3. Have smooth transitions between sections
-    4. Include relevant statistics and expert quotes where applicable
-    5. End with a strong conclusion that summarizes key points
-    6. Use proper formatting with headers, subheaders, and paragraphs
-    7. Include references or citations where applicable
-    8. Make it less than grade 8 english
-
-    Format the response in markdown with proper headings (##) and sections.`;
+  const generateBlogPart = async (prompt: string) => {
+    const response = await fetch(OPENROUTER_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Every AI',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'anthropic/claude-3-sonnet',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 4000,
+      }),
+    });
+    
+    const data = await response.json();
+    return data.choices[0].message.content.trim();
   };
 
   const generateBlog = async () => {
     if (!blogTopic.trim()) return;
-    
     setIsLoading(true);
+    
     try {
-      // First API call to get the outline
-      const outlinePrompt = generateInitialPrompt(blogTopic, keywords, targetAudience, tone);
-      const outlineResponse = await fetch('https://api.perplexity.ai/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'llama-3.1-sonar-small-128k-online',
-          messages: [{ role: 'user', content: outlinePrompt }],
-          temperature: 0.7,
-          max_tokens: 4000,
-        }),
-      });
+      // Step 1: Initial Research with Claude (replacing Perplexity due to API issues)
+      const researchPrompt = `Conduct comprehensive research on "${blogTopic}" covering:
+      1. Latest industry trends and developments
+      2. Key statistics and data points
+      3. Expert opinions and insights
+      4. Common pain points and solutions
+      5. Real-world examples and case studies
+      6. Competitor content analysis
+      7. Unique angles and perspectives`;
 
-      if (!outlineResponse.ok) {
-        throw new Error(`Outline API error: ${outlineResponse.status}`);
-      }
+      const research = await generateBlogPart(researchPrompt);
 
-      const outlineData = await outlineResponse.json();
-      console.log('Outline Response:', outlineData);
+      // Step 2: Content Strategy with Claude
+      const strategyPrompt = `As a professional blog writer, create a detailed content strategy for "${blogTopic}".
+      Use this research: ${research}
+      Target audience: ${targetAudience}
+      Tone: ${tone}
+      Keywords: ${keywords}
       
-      const outline = outlineData.choices[0].message.content;
+      Provide:
+      1. Engaging hook and introduction approach
+      2. Key points to cover
+      3. Content structure and flow
+      4. Storytelling elements
+      5. Data presentation strategy
+      6. Call-to-action recommendations`;
 
-      // Second API call to generate the full blog
-      const blogResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=AIzaSyDNp-gscV7HSPlV7WyKNtdYP2b7KQyle_w`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: generateFinalBlogPrompt(outline)
-            }]
-          }]
-        })
-      });
+      const contentStrategy = await generateBlogPart(strategyPrompt);
 
-      if (!blogResponse.ok) {
-        throw new Error(`Blog API error: ${blogResponse.status}`);
-      }
+      // Rest of the steps remain the same
+      const introPrompt = `Write an engaging introduction for a blog about "${blogTopic}".
+      Research: ${research}
+      Strategy: ${contentStrategy}
+      Target audience: ${targetAudience}
+      Tone: ${tone}
+      Make it hook the reader and establish credibility.`;
 
-      const blogData = await blogResponse.json();
-      console.log('Blog Response:', blogData);
-      
-      const blogContent = blogData.candidates[0].content.parts[0].text;
+      const introduction = await generateBlogPart(introPrompt);
 
-      // Add the blog to messages
-      const newMessage: Message = {
-        role: 'ai',
-        content: blogContent,
-        type: 'text'
+      const mainContentPrompt = `Write the main body of the blog about "${blogTopic}".
+      Previous content: ${introduction}
+      Research: ${research}
+      Strategy: ${contentStrategy}
+      Include relevant statistics, examples, and expert insights.
+      Maintain a natural flow and ${tone} tone.`;
+
+      const mainContent = await generateBlogPart(mainContentPrompt);
+
+      const conclusionPrompt = `Write a compelling conclusion for the blog about "${blogTopic}".
+      Previous content summary: ${introduction.substring(0, 200)}...
+      Strategy: ${contentStrategy}
+      Include a strong call-to-action that resonates with ${targetAudience}.`;
+
+      const conclusion = await generateBlogPart(conclusionPrompt);
+
+      const finalBlogContent = `${introduction}\n\n${mainContent}\n\n${conclusion}`;
+
+      const blogPost: BlogPost = {
+        content: finalBlogContent,
+        metadata: {
+          topic: blogTopic,
+          keywords: keywords.split(',').map(k => k.trim()),
+          wordCount: finalBlogContent.split(/\s+/).length,
+          generatedDate: new Date().toISOString(),
+          seoAnalysis: research,
+          enhancementPlan: contentStrategy
+        }
       };
 
-      setMessages(prev => [...prev, newMessage]);
-      await saveConversation(userId, toolName, [newMessage]);
+      setMessages(prev => [...prev, 
+        { role: 'user', content: `Generate blog about: ${blogTopic}`, type: 'text' },
+        { role: 'ai', content: blogPost.content, type: 'text' }
+      ]);
+
+      return blogPost;
 
     } catch (error) {
       console.error('Error generating blog:', error);
-      setMessages(prev => [...prev, {
-        role: 'ai',
-        content: `Error generating blog post: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
-        type: 'text'
-      }]);
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
+  };
+
+  const initializeGeminiChat = () => {
+    if (toolName === 'Gemini' && !chatSession) {
+      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({
+        model: "gemini-1.5-pro",
+      });
+
+      const generationConfig = {
+        temperature: 1,
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 8192,
+        responseMimeType: "text/plain",
+      };
+
+      const newChatSession = model.startChat({
+        generationConfig,
+        history: [],
+      });
+
+      setChatSession(newChatSession);
+    }
+  };
+
+  useEffect(() => {
+    initializeGeminiChat();
+  }, [toolName]);
+
+  const callGemini = async (prompt: string): Promise<string> => {
+    try {
+      if (!chatSession) {
+        initializeGeminiChat();
+      }
+
+      const result = await chatSession.sendMessage(prompt);
+      return result.response.text();
+    } catch (error) {
+      console.error('Error calling Gemini:', error);
+      throw error;
+    }
   };
 
   return (

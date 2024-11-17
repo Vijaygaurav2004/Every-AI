@@ -5,5 +5,7 @@ export interface BlogPost {
     keywords: string[];
     wordCount: number;
     generatedDate: string;
+    seoAnalysis: string;
+    enhancementPlan: string;
   };
 }

@@ -95,5 +95,13 @@ export const aiTools = [
     category: "Image",
     icons: [ImageIcon, ImageIcon, ImageIcon],
     description: "Advanced AI image generation model by Black Forest Labs"
+  },
+
+  {
+    id: 14,
+    name: "Gemini",
+    category: "Text",
+    icons: [MessageSquare, MessageSquare, MessageSquare],
+    description: "Google's advanced AI model with enhanced reasoning and conversation capabilities."
   }
 ]
